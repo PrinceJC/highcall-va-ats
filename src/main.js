@@ -1,4 +1,9 @@
 import "./styles.css";
+// Figtree: the typeface used on highcallva.com, bundled so it loads on every computer (public careers page only).
+import "@fontsource/figtree/latin-400.css";
+import "@fontsource/figtree/latin-500.css";
+import "@fontsource/figtree/latin-600.css";
+import "@fontsource/figtree/latin-700.css";
 import LOGO from "./assets/logo.png";
 import { sb, configured } from "./supabase.js";
 import { searchList } from "./search.js";
