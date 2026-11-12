@@ -138,6 +138,7 @@ function refresh() { if (S.ui.route) render(); }
 const CRUMB = { dashboard: "Dashboard", roles: "Roles", pool: "Talent pool", config: "Hiring setup" };
 const manilaDate = () => new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }).format(new Date());
 function shell(r) {
+  document.body.classList.toggle("site-careers", r === "careers");
   if (r === "careers" || r === "login" || r === "noaccess" || r === "setpw") {
     const bar = S.isRecruiter && r === "careers" ? `<div class="previewbar"><span>You’re viewing the public careers page</span><a class="btn sm" href="#dashboard">Back to recruiting</a></div>` : "";
     return `<div class="app public">${bar}<div id="view"></div></div>`;
@@ -312,41 +313,59 @@ function viewCareers(v) {
   if (v.dataset.v !== "careers") {
     v.dataset.v = "careers";
     v.innerHTML = `
-    <header class="lp-bar"><div class="lp-wrap">
-      <a class="lp-brand" href="#careers"><img src="${LOGO}" alt=""><span><b>${APP_NAME}</b><small>HighCall Virtual Assistants</small></span></a>
-      <nav class="lp-nav"><button type="button" class="lp-navlink" id="toroles">Open roles</button><span id="authbtn"></span></nav>
-    </div></header>
-    <section class="lp-hero"><div class="lp-wrap">
-      <img class="lp-mark" src="${LOGO}" alt="HighCall VA">
-      <div class="lp-line" aria-hidden="true"></div>
-      <h1>Build your remote career with HighCall VA</h1>
-      <p id="lpintro"></p>
-      <form class="lp-search" id="lpsearch" role="search">
-        <input id="jobq" type="search" placeholder="Search roles, e.g. executive assistant" aria-label="Search roles" value="${esc(S.ui.jobQ || "")}">
-        <select id="jobtype" aria-label="Job type"><option value="">Any type</option>${JOB_TYPES.map((t) => `<option ${S.ui.jobType === t ? "selected" : ""}>${t}</option>`).join("")}</select>
-        <button class="btn primary" type="submit">Search</button>
-      </form>
-    </div></section>
+    <header class="lp-bar"><div class="lp-wrap"><div class="lp-navpill">
+      <a class="lp-brand" href="#careers" aria-label="HighCall Careers home"><img src="${LOGO}" alt=""><span class="lp-word"><b>HighCall</b><em>Careers</em></span></a>
+      <nav class="lp-nav"><button type="button" class="lp-navlink" id="toroles">Open roles</button><a class="lp-navlink" href="https://highcallva.com" rel="noopener">About HighCall VA</a><span id="authbtn"></span>
+        <button type="button" class="lp-pill lime" data-apply="">Join the talent pool</button></nav>
+    </div></div></header>
+    <div class="lp-stage">
+    <svg class="lp-swoosh" viewBox="0 0 1440 1200" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
+      <defs><linearGradient id="swmain" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FE3EC"/><stop offset=".45" stop-color="#83DEAD"/><stop offset="1" stop-color="#A5D334"/></linearGradient></defs>
+      <path d="M -90 1080 C 30 900, 140 790, 290 782 C 450 774, 540 900, 730 925 C 940 952, 1090 820, 1210 580 C 1290 410, 1360 180, 1560 -60" fill="none" stroke="url(#swmain)" stroke-width="58" stroke-linecap="round"/>
+    </svg>
+    <section class="lp-hero">
+      <div class="lp-wrap lp-hero-inner">
+        <p class="lp-kicker">Careers at HighCall VA</p>
+        <h1>Build your remote career with HighCall VA</h1>
+        <p id="lpintro"></p>
+        <form class="lp-search" id="lpsearch" role="search">
+          <input id="jobq" type="search" placeholder="Search roles, e.g. executive assistant" aria-label="Search roles" value="${esc(S.ui.jobQ || "")}">
+          <select id="jobtype" aria-label="Job type"><option value="">Any type</option>${JOB_TYPES.map((t) => `<option ${S.ui.jobType === t ? "selected" : ""}>${t}</option>`).join("")}</select>
+          <button class="lp-pill lime" type="submit">Search</button>
+        </form>
+        <div class="lp-stats">
+          <div class="lp-stat mint"><b id="statroles">0</b><span>Open roles</span></div>
+          <div class="lp-stat lime"><b>100%</b><span>Remote, work from home</span></div>
+          <div class="lp-stat mint"><b>1 form</b><span>Apply once, considered for future roles</span></div>
+        </div>
+      </div>
+    </section>
     <section class="lp-section" id="openroles"><div class="lp-wrap">
       <div id="lperr"></div>
-      <p class="eyebrow">Open positions</p><h2 class="lp-h2" id="jobcount"></h2>
+      <p class="lp-kicker">Open positions</p><h2 class="lp-h2" id="jobcount"></h2>
       <div class="lp-grid" id="jobgrid"></div>
     </div></section>
+    </div>
     <section class="lp-section lp-last"><div class="lp-wrap">
-      <div class="lp-cta"><img src="${LOGO}" alt=""><div><h3>Don’t see the right role?</h3><p>Join the talent pool and we’ll reach out when a role fits.</p></div>
-        <button class="btn primary" data-apply="">Join the talent pool ${ICON.arrow}</button></div>
+      <div class="lp-cta">
+        <svg class="lp-cta-swoosh" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="sw3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A5D334"/><stop offset=".6" stop-color="#83DEAD"/><stop offset="1" stop-color="#6FE3EC"/></linearGradient></defs>
+          <path d="M 0 190 C 120 190, 200 175, 260 150 C 300 130, 320 120, 350 135 C 390 155, 430 150, 470 110 C 520 60, 560 30, 620 -20" fill="none" stroke="url(#sw3)" stroke-width="16" stroke-linecap="round"/></svg>
+        <img src="${LOGO}" alt="">
+        <div><h3>Don’t see the right role?</h3><p>Join the HighCall VA talent pool and we’ll reach out when a role fits your experience.</p></div>
+        <button class="lp-pill lime" data-apply="">Join the talent pool ${ICON.arrow}</button>
+      </div>
     </div></section>
-    <footer class="lp-foot"><div class="lp-wrap">© ${new Date().getFullYear()} HighCall Virtual Assistants</div></footer>`;
+    <footer class="lp-foot"><div class="lp-wrap"><span>© ${new Date().getFullYear()} HighCall Virtual Assistants</span><a href="https://highcallva.com" rel="noopener">highcallva.com</a></div></footer>`;
     const scrollToRoles = () => $("#openroles", v).scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     $("#toroles", v).onclick = scrollToRoles;
     $("#jobq", v).oninput = (e) => { S.ui.jobQ = e.target.value; drawJobs(v); };
     $("#jobtype", v).onchange = (e) => { S.ui.jobType = e.target.value; drawJobs(v); };
     $("#lpsearch", v).onsubmit = (e) => { e.preventDefault(); drawJobs(v); scrollToRoles(); };
-    $("[data-apply]", v).onclick = () => openApply(null);
+    $$("[data-apply]", v).forEach((b) => (b.onclick = () => openApply(null)));
   }
   $("#lpintro", v).textContent = S.settings.careers_intro || "Work from home with clients in the US and around the world.";
   $("#lperr", v).innerHTML = S.loadError ? `<div class="note warn" style="margin-bottom:20px">${esc(S.loadError)}</div>` : "";
-  $("#authbtn", v).innerHTML = S.session ? `<button class="btn" id="so">Sign out</button>` : `<a href="#login" class="btn">Team sign in</a>`;
+  $("#authbtn", v).innerHTML = S.session ? `<button type="button" class="lp-navlink" id="so">Sign out</button>` : `<a href="#login" class="lp-navlink">Team sign in</a>`;
   const so = $("#so", v); if (so) so.onclick = signOut;
   drawJobs(v);
 }
@@ -355,6 +374,7 @@ function drawJobs(v) {
   const list = all.filter((j) => (!type || j.employment_type === type) &&
     (!qq || [j.title, j.department, j.description, j.requirements, j.schedule, j.location].join(" ").toLowerCase().includes(qq)));
   const filtered = qq || type;
+  const sr = $("#statroles", v); if (sr) sr.textContent = all.length;
   $("#jobcount", v).textContent = !all.length ? "No open roles right now" : filtered ? `${list.length} of ${all.length} role${all.length === 1 ? "" : "s"} match` : `${all.length} role${all.length === 1 ? "" : "s"} hiring now`;
   const grid = $("#jobgrid", v), applied = myApplied();
   if (!all.length) { grid.innerHTML = `<div class="lp-empty">New roles open often. Join the talent pool below and we’ll contact you when one fits.</div>`; return; }
@@ -367,7 +387,7 @@ function drawJobs(v) {
       <div class="lp-tags">${j.employment_type ? `<span class="tag">${esc(j.employment_type)}</span>` : ""}${j.status === "internal" ? `<span class="tag internal">Internal</span>` : ""}${applied[j.id] ? `<span class="tag done">Applied</span>` : ""}</div>
       <h3>${esc(j.title)}</h3>
       <p>${[j.department, j.schedule || j.location].filter(Boolean).map(esc).join(" · ") || "Remote"}</p>
-      <button type="button" class="btn" data-job="${esc(j.id)}">View role ${ICON.arrow}</button>
+      <button type="button" class="lp-pill beige" data-job="${esc(j.id)}">View role ${ICON.arrow}</button>
     </article>`).join("");
   $$("[data-job]", grid).forEach((b) => (b.onclick = () => openJob(b.dataset.job)));
 }
