@@ -248,35 +248,33 @@ function authOpen() {
       <small class="art-foot">Hire with care. Grow with your people.</small>
     </div>
     <div class="formside">
-      <svg class="auth-swoosh" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="authsw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FE3EC"/><stop offset=".5" stop-color="#83DEAD"/><stop offset="1" stop-color="#A5D334"/></linearGradient></defs>
-        <path vector-effect="non-scaling-stroke" d="M 45 955 C 78 760, 100 520, 165 468 C 262 396, 402 868, 560 878 C 720 888, 832 640, 955 60" fill="none" stroke="url(#authsw)" stroke-width="38" stroke-linecap="round"/>
-      </svg>
       <div class="formcard">`;
 }
 const authClose = `</div></div></div>`;
 function viewLogin(v, mode = "signin") {
   const reset = mode === "reset";
   v.innerHTML = `${authOpen()}
-    <h1>${reset ? "Reset your password" : "Team sign in"}</h1>
-    ${S.justSignedOut && !reset ? `<div class="note" style="margin-bottom:18px">You’re signed out.</div>` : ""}
-    <p class="muted" style="margin:0 0 20px">${reset ? "Enter your HCVA login email and we’ll send a link to set a new password." : "Use your HCVA login. It’s the same email and password you use for DeviceCare."}</p>
-    <form class="stack" id="lf" novalidate>
-      <label class="f">Email<input class="in" type="email" name="email" required autocomplete="username"></label>
-      ${reset ? "" : `<label class="f">Password<input class="in" type="password" name="password" required autocomplete="current-password"></label>`}
+    <span class="auth-eyebrow">${reset ? "Password help" : "Welcome to HighCall Careers"}</span>
+    <h1 class="auth-title">${reset ? "Reset your password" : "Sign in to your workspace"}</h1>
+    ${S.justSignedOut && !reset ? `<div class="note auth-note">You’re signed out.</div>` : ""}
+    <p class="auth-sub">${reset ? "Enter your HCVA login email and we’ll send a link to set a new password." : "Manage roles, candidates and hiring. Use the same login as DeviceCare."}</p>
+    <form class="auth-form" id="lf" novalidate>
+      <label for="lemail">Work email</label>
+      <input id="lemail" type="email" name="email" required autocomplete="username" placeholder="you@highcallva.com">
+      ${reset ? "" : `<label for="lpass">Password</label><input id="lpass" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">`}
       <div class="qerr hidden" id="lerr" role="alert"></div>
-      <button class="btn primary">${reset ? "Email me a reset link" : "Sign in"}</button>
+      <button class="btn primary auth-submit"><span class="lbl">${reset ? "Email me a reset link" : "Sign in"}</span>${ICON.arrow}</button>
     </form>
-    <p class="small" style="margin-top:18px;display:flex;gap:16px;flex-wrap:wrap">
-      <a href="#login" id="swap">${reset ? "Back to sign in" : "Forgot your password?"}</a><a href="#careers">Careers page</a></p>${authClose}`;
+    <p class="auth-help"><a href="#login" id="swap">${reset ? "Back to sign in" : "Forgot your password?"}</a> · <a href="#careers">Careers page</a><br>Need an account? Contact your HCVA IT administrator.</p>
+    <div class="auth-footnote">${ICON.check}Access protected by Supabase authentication</div>${authClose}`;
   $("#swap", v).onclick = (e) => { e.preventDefault(); viewLogin(v, reset ? "signin" : "reset"); };
   $("#lf", v).onsubmit = async (e) => {
     e.preventDefault();
-    const f = e.target, email = f.elements.email.value.trim(), err = $("#lerr", v), b = $("button", f);
-    const fail = (m) => { err.textContent = m; err.classList.remove("hidden"); b.disabled = false; b.textContent = reset ? "Email me a reset link" : "Sign in"; };
+    const f = e.target, email = f.elements.email.value.trim(), err = $("#lerr", v), b = $("button", f), lbl = $(".lbl", b);
+    const fail = (m) => { err.textContent = m; err.classList.remove("hidden"); b.disabled = false; lbl.textContent = reset ? "Email me a reset link" : "Sign in"; };
     err.classList.add("hidden");
     if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Enter your login email.");
-    b.disabled = true; b.textContent = reset ? "Sending…" : "Signing in…";
+    b.disabled = true; lbl.textContent = reset ? "Sending…" : "Signing in…";
     if (reset) {
       const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + "/?recovery=1" });
       if (error && /rate|limit/i.test(error.message)) return fail("Too many emails were sent recently. Wait a few minutes and try again.");

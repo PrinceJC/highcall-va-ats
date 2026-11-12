@@ -507,10 +507,8 @@ body.site-careers{background:var(--web-bg)}
 .auth .formside{position:relative;overflow:hidden}
 .auth .formcard{position:relative;z-index:1}
 /* swoosh runs the full width of the sign-in side; both rounded ends stay visible */
-/* website-style wave: climbs from bottom-left, dips through the middle, rises to top-right, behind the form card */
-.auth-swoosh{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
-.auth .formcard{position:relative;z-index:1;width:min(440px,100%);background:#fff;border-radius:26px;padding:38px 36px 32px;box-shadow:0 18px 46px rgba(1,61,53,.10)}
-@media (max-width:860px){.auth-swoosh{display:none}}
+
+
 
 
 /* nav bar sits over the swoosh, like highcallva.com */
@@ -536,3 +534,25 @@ body.site-careers{font-family:"Figtree",Inter,"Segoe UI",Arial,sans-serif}
 .site-careers .lp-cta h3{font-weight:500}
 @media (max-width:980px){.site-careers .lp-wrap{width:calc(100% - 40px)}}
 @media (max-width:680px){.site-careers .lp-wrap{width:calc(100% - 28px)}.site-careers .lp-hero p#lpintro{max-width:none}.site-careers .lp-stat{max-width:none}}
+
+/* ---------- sign-in form: same layout and sizes as DeviceCare's (buttons stay HighCall lime) ---------- */
+.auth .formside{background:#f7faf8;padding:40px}
+.auth .formcard{width:100%;max-width:380px;background:none;box-shadow:none;padding:0;border-radius:0}
+.auth-eyebrow{display:block;font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--green)}
+.auth .formcard h1.auth-title{font-size:28px;font-weight:700;letter-spacing:-.8px;line-height:1.3;margin:16px 0 11px;color:#1c3439}
+.auth-sub{font-size:13px;color:var(--muted);margin:0}
+.auth-note{margin:14px 0 4px;font-size:13px}
+.auth-form{margin-top:29px}
+.auth-form label{display:block;font-size:12px;font-weight:600;color:#1c3439;margin:23px 0 9px}
+.auth-form label:first-child{margin-top:0}
+.auth-form input{width:100%;border:1px solid #d8e2dc;border-radius:7px;padding:14px;background:#fff;color:#29473b;font-size:13px}
+.auth-form input::placeholder{color:#91a098}
+.auth-form input:focus{outline:2px solid #8DB82C;outline-offset:-1px;border-color:transparent}
+.auth-form .qerr{margin-top:14px}
+.auth-submit{width:100%;margin-top:26px;justify-content:space-between;padding:14px 17px;font-size:13px;border-radius:8px}
+.auth-submit svg{width:18px;height:18px}
+.auth-help{font-size:11px;text-align:center;color:#7d9081;margin:20px 0 0;line-height:1.8}
+.auth-help a{color:var(--green)}
+.auth-footnote{display:flex;gap:8px;align-items:center;justify-content:center;font-size:10px;color:#829785;border-top:1px solid var(--line);padding-top:24px;margin-top:34px}
+.auth-footnote svg{width:15px;height:15px}
+@media (max-width:860px){.auth .formcard h1.auth-title{font-size:26px}}
