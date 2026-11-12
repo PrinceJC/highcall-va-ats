@@ -410,17 +410,35 @@ function candFields(c = {}, { recruiter = false } = {}) {
   <label class="f">LinkedIn or portfolio link<input class="in" name="link" type="url" value="${esc(c.link)}" placeholder="https://"></label>
   ${recruiter ? "" : `<label class="f">Why HighCall VA?<span class="hint">Optional, a few sentences</span><textarea class="in" name="note">${esc(c.note)}</textarea></label>`}
   <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600">CV (PDF)
-    <label class="drop" id="drop"><input type="file" name="cv" accept="application/pdf,.pdf" class="hidden"><span>Choose a PDF, up to 20 MB</span></label></div>
+    <label class="drop" id="drop"><input type="file" name="cv" accept="application/pdf,.pdf" class="hidden"><span>Drop a PDF here or click to choose, up to 20 MB</span></label></div>
   <input name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">`;
 }
-function bindDrop(root) {
+const isPdf = (f) => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+// Let a drop zone accept dragged files as well as clicks.
+function enableDragDrop(zone, onFiles) {
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragging"); });
+  zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("dragging"); });
+  zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("dragging"); if (e.dataTransfer?.files?.length) onFiles([...e.dataTransfer.files]); });
+}
+function bindDrop(root, { onPdf } = {}) {
   const d = $("#drop", root); if (!d) return; const inp = $("input", d);
   inp.onchange = () => {
     const f = inp.files[0]; if (!f) return;
-    if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) { toast("Choose a PDF file."); inp.value = ""; return; }
+    if (!isPdf(f)) { toast("Choose a PDF file."); inp.value = ""; return; }
     if (f.size > 20 * 1024 * 1024) { toast("That file is over 20 MB."); inp.value = ""; return; }
     d.classList.add("has"); $("span", d).textContent = f.name;
+    if (onPdf) onPdf(f);
   };
+  enableDragDrop(d, (files) => {
+    const f = files[0];
+    try { const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files; } catch { return; }
+    inp.dispatchEvent(new Event("change"));
+  });
+}
+async function readCv(file) {
+  const [{ extractPdf }, { detectContact }] = await Promise.all([import("./pdf.js"), import("./cvparse.js")]);
+  const parsed = await withTimeout(extractPdf(file), 25000);
+  return { parsed, ...detectContact(parsed) };
 }
 function readForm(form) {
   const g = (n) => form.elements[n]?.value?.trim() || "";
@@ -774,11 +792,13 @@ function viewRole(v, id) {
       <select class="in" id="vis" style="width:auto;padding:11px 12px" aria-label="Visibility">${[["draft", "Draft"], ["public", "Published publicly"], ["internal", "Published internally"], ["archived", "Archived"]].map(([k, l]) => `<option value="${k}" ${role.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
       <button class="btn" id="edit">Edit role</button>
       <button class="btn" id="addcand">${ICON.plus}Add candidate</button>
+      <button class="btn" id="bulkcand">${ICON.inbox}Bulk upload CVs</button>
       <button class="btn primary" id="frompool">Copy from talent pool</button>
     </div></div>`;
   $("#vis", v).onchange = (e) => setRoleStatus(role, e.target.value);
   $("#edit", v).onclick = () => openRoleEditor(role);
   $("#addcand", v).onclick = () => openAddCand(role.id);
+  $("#bulkcand", v).onclick = () => openBulkUpload(role.id);
   $("#frompool", v).onclick = () => { S.ui.targetRole = role.id; go("pool"); };
   const counts = Object.fromEntries(STAGES.map((s) => [s, 0])); es.forEach((e) => (counts[e.stage] = (counts[e.stage] || 0) + 1));
   $("#pstrip", v).innerHTML = [["all", "All", es.length], ...STAGES.map((s) => [s, s, counts[s]])].map(([k, l, n]) => `<button data-st="${k}" class="${S.ui.stage === k ? "on" : ""}"><div class="k">${l}</div><div class="v">${n}</div></button>`).join("");
@@ -809,7 +829,7 @@ function drawRoleList(v, id) {
 function viewPool(v) {
   if (v.dataset.v !== "pool") {
     v.dataset.v = "pool"; const f = S.ui.f;
-    v.innerHTML = `${pageHead("Every candidate, one place", "Talent pool", "Everyone who applied or joined the pool. Search, filter, and copy people into a role.", `<button class="btn primary" id="addc">${ICON.plus}Add candidate</button>`)}
+    v.innerHTML = `${pageHead("Every candidate, one place", "Talent pool", "Everyone who applied or joined the pool. Search, filter, and copy people into a role.", `<button class="btn" id="bulkc">${ICON.inbox}Bulk upload CVs</button><button class="btn primary" id="addc">${ICON.plus}Add candidate</button>`)}
       <div class="search"><input class="in" id="pq" type="search" value="${esc(S.ui.poolQ)}" placeholder='(“cold calling” OR appointment*) AND skill:gohighlevel NOT location:manila' aria-label="Boolean search"></div>
       <div class="help">Use <code>AND</code> <code>OR</code> <code>NOT</code>, brackets, <code>"exact phrase"</code>, <code>admin*</code> for word starts, and fields like <code>skill:</code> <code>location:</code> <code>name:</code> <code>role:</code> <code>cv:</code> <code>os:</code>. Searches CV text too.</div>
       <div id="pqerr"></div>
@@ -829,6 +849,7 @@ function viewPool(v) {
     $$("[data-f]", v).forEach((el) => { el.oninput = el.onchange = () => { S.ui.f[el.dataset.f] = el.type === "checkbox" ? el.checked : el.value; drawPool(v); }; });
     $("#clr", v).onclick = () => { S.ui.f = {}; S.ui.poolQ = ""; delete v.dataset.v; viewPool(v); };
     $("#addc", v).onclick = () => openAddCand(null);
+    $("#bulkc", v).onclick = () => openBulkUpload(null);
   }
   const cur = S.ui.f.inrole || "";
   $("#inrole", v).innerHTML = [["", "Any"], ["none", "Not in any role"], ...S.roles.filter((r) => r.status !== "archived").map((r) => [r.id, "In: " + r.title])].map(([k, l]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>${esc(l)}</option>`).join("");
@@ -914,11 +935,27 @@ function openAddCand(roleId) {
   const m = openLayer(`<form class="modal" novalidate>
     <div class="dhead"><h2>Add a candidate</h2><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
     ${candFields({}, { recruiter: true })}
+    <div id="detect"></div>
     <div id="dupe"></div>
     <label class="f">Add to role<select class="in" name="role"><option value="">Talent pool only</option>${roles.map((r) => `<option value="${esc(r.id)}" ${roleId === r.id ? "selected" : ""}>${esc(r.title)}</option>`).join("")}</select></label>
     <div class="qerr hidden" id="ferr"></div>
     <div class="row mfoot" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit" id="addbtn">Add candidate</button></div></form>`);
-  bindDrop(m); $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  const detectBox = () => $("#detect", m);
+  bindDrop(m, { onPdf: async (file) => {
+    detectBox().innerHTML = `<div class="note">Reading the CV for the name and email…</div>`;
+    try {
+      const r = await readCv(file);
+      const filled = [];
+      if (r.name && !m.elements.name.value.trim()) { m.elements.name.value = r.name; filled.push("name"); }
+      if (r.email && !m.elements.email.value.trim()) { m.elements.email.value = r.email; filled.push("email"); }
+      checkDupe();
+      detectBox().innerHTML = r.reason
+        ? `<div class="note warn">${esc(r.reason)} ${filled.length ? `We filled in the ${filled.join(" and ")}. ` : ""}Type the missing details in.</div>`
+        : filled.length ? `<div class="note">Filled in the ${filled.join(" and ")} from the CV. Check ${filled.length > 1 ? "them" : "it"}, add any other details, then save.</div>`
+        : `<div class="note">The CV was read. The name and email you typed were kept.</div>`;
+    } catch (e) { console.warn(e); detectBox().innerHTML = `<div class="note warn">Couldn’t read this PDF. Type the name and email in.</div>`; }
+  } });
   const checkDupe = () => {
     const ex = findByEmail(m.elements.email.value);
     $("#dupe", m).innerHTML = ex ? `<div class="note"><b>${esc(ex.name)}</b> is already in the talent pool with this email. Saving updates their record: filled-in fields replace the old ones, and a new CV becomes current while the old one is kept. <button type="button" class="link" id="viewdupe">View their profile</button></div>` : "";
@@ -946,6 +983,131 @@ function openAddCand(roleId) {
       layerDirty = false; closeLayer(); toast(ex ? `${cand.name} was already in the talent pool. Their record was updated.` : "Candidate added"); await reload();
     } catch (ex) { btn.disabled = false; btn.textContent = label; writeErr(ex); }
   };
+}
+
+
+/* ---------- bulk CV upload ---------- */
+const BULK_MAX = 50;
+function openBulkUpload(roleId) {
+  const roles = S.roles.filter((r) => r.status !== "archived");
+  let rows = []; let running = false, finished = false;
+  const m = openLayer(`<div class="modal bulk-modal">
+    <div class="dhead"><div><h2>Bulk upload CVs</h2><div class="muted small" style="margin-top:4px">Each CV is read for the candidate’s name and email. CVs where either can’t be found are skipped. The rest still go through.</div></div>
+      <button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    <label class="drop bulkdrop" id="bdrop"><input type="file" accept="application/pdf,.pdf" multiple class="hidden"><span><b>Drop PDF CVs here</b> or click to choose (up to ${BULK_MAX} at a time, 20 MB each)</span></label>
+    <label class="f">Add to role<select class="in" id="brole"><option value="">Talent pool only</option>${roles.map((r) => `<option value="${esc(r.id)}" ${roleId === r.id ? "selected" : ""}>${esc(r.title)}</option>`).join("")}</select></label>
+    <div id="brows"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><span class="muted small" id="bsum" style="margin-right:auto"></span><button type="button" class="btn" data-close id="bcancel">Cancel</button><button type="button" class="btn primary" id="bgo" disabled>Add candidates</button></div>
+  </div>`);
+  const $b = (sel) => $(sel, m);
+  $$("[data-close]", m).forEach((b) => (b.onclick = () => { if (running) return; if (finished) { closeLayer(); reload(); } else closeLayer(); }));
+  const ready = (r) => r.state === "ready" || r.state === "update";
+  const validate = (r) => {
+    if (!["ready", "update", "dup"].includes(r.state)) return;
+    const email = r.email.trim().toLowerCase();
+    r.state = !r.name.trim() || !/^\S+@\S+\.\S+$/.test(email) ? "dup" : findByEmail(email) ? "update" : "ready";
+    if (r.state === "dup") r.note = !r.name.trim() ? "Name is required." : "Enter a valid email.";
+    const twin = rows.find((o) => o !== r && ready(o) && o.email.trim().toLowerCase() === email && rows.indexOf(o) < rows.indexOf(r));
+    if (twin && ready(r)) { r.state = "dup"; r.note = `Same email as ${twin.file.name}.`; }
+  };
+  const revalidate = () => { rows.forEach((r) => { if (["ready", "update", "dup"].includes(r.state) && r.detected) { r.state = "ready"; r.note = ""; } }); rows.forEach(validate); draw(); };
+  const badge = (r) => ({
+    reading: `<span class="badge">Reading…</span>`,
+    ready: `<span class="badge ok">Ready</span>`,
+    update: `<span class="badge warn" title="Their record will be updated with this CV">Already in pool, will update</span>`,
+    dup: `<span class="badge bad">Skipped</span>`,
+    fail: `<span class="badge bad">Skipped</span>`,
+    saving: `<span class="badge">Saving…</span>`,
+    added: `<span class="badge ok">Added</span>`,
+    updated: `<span class="badge ok">Updated</span>`,
+    error: `<span class="badge bad">Failed</span>`,
+  })[r.state];
+  function draw() {
+    const box = $b("#brows");
+    box.innerHTML = rows.length ? `<div class="table-wrap bulk-table"><table class="t"><thead><tr><th>CV</th><th>Full name</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr class="${["fail", "dup", "error"].includes(r.state) ? "skip" : ""}">
+        <td class="small bfile" title="${esc(r.file.name)}"><span>${esc(r.file.name)}</span></td>
+        <td>${r.detected && !finished && !running && ["ready", "update", "dup"].includes(r.state) ? `<input class="in" data-bn="${i}" value="${esc(r.name)}" aria-label="Full name for ${esc(r.file.name)}">` : esc(r.name) || `<span class="muted">—</span>`}</td>
+        <td>${r.detected && !finished && !running && ["ready", "update", "dup"].includes(r.state) ? `<input class="in" data-be="${i}" value="${esc(r.email)}" aria-label="Email for ${esc(r.file.name)}">` : esc(r.email) || `<span class="muted">—</span>`}</td>
+        <td>${badge(r)}${r.note ? `<div class="small" style="margin-top:4px;color:${["fail", "dup", "error"].includes(r.state) ? "var(--bad)" : "var(--muted)"}">${esc(r.note)}</div>` : ""}</td>
+        <td>${!running && !finished ? `<button type="button" class="btn ghost sm" data-brm="${i}" aria-label="Remove ${esc(r.file.name)}">${ICON.x}</button>` : ""}</td></tr>`).join("")}
+    </tbody></table></div>` : "";
+    $$("[data-bn]", box).forEach((el) => (el.onchange = () => { rows[+el.dataset.bn].name = el.value; revalidate(); }));
+    $$("[data-be]", box).forEach((el) => (el.onchange = () => { rows[+el.dataset.be].email = el.value; revalidate(); }));
+    $$("[data-brm]", box).forEach((el) => (el.onclick = () => { rows.splice(+el.dataset.brm, 1); revalidate(); }));
+    const nReady = rows.filter(ready).length, nRead = rows.filter((r) => r.state === "reading").length, nSkip = rows.filter((r) => ["fail", "dup"].includes(r.state)).length;
+    const nDone = rows.filter((r) => ["added", "updated"].includes(r.state)).length, nErr = rows.filter((r) => r.state === "error").length;
+    $b("#bsum").textContent = finished ? `${nDone} saved${nSkip ? ` · ${nSkip} skipped` : ""}${nErr ? ` · ${nErr} failed` : ""}`
+      : rows.length ? `${nReady} ready${nSkip ? ` · ${nSkip} skipped` : ""}${nRead ? ` · reading ${nRead}…` : ""}` : "";
+    const go = $b("#bgo");
+    if (finished) { go.textContent = "Done"; go.disabled = false; go.onclick = () => { closeLayer(); reload(); }; $b("#bcancel").classList.add("hidden"); }
+    else { go.textContent = nReady ? `Add ${nReady} candidate${nReady === 1 ? "" : "s"}` : "Add candidates"; go.disabled = !nReady || !!nRead || running; }
+  }
+  async function addFiles(files) {
+    if (running || finished) return;
+    const room = BULK_MAX - rows.length;
+    const list = files.slice(0, Math.max(0, room));
+    if (files.length > room) toast(`Only ${BULK_MAX} CVs at a time. The first ${room} were added.`);
+    const fresh = list.map((file) => {
+      if (!isPdf(file)) return { file, name: "", email: "", state: "fail", note: "Not a PDF." };
+      if (file.size > 20 * 1024 * 1024) return { file, name: "", email: "", state: "fail", note: "Over 20 MB." };
+      if (rows.some((r) => r.file.name === file.name && r.file.size === file.size)) return null;
+      return { file, name: "", email: "", state: "reading", note: "" };
+    }).filter(Boolean);
+    rows.push(...fresh); layerDirty = true; draw();
+    let next = 0;
+    const worker = async () => {
+      while (next < fresh.length) {
+        const r = fresh[next++]; if (r.state !== "reading") continue;
+        try {
+          const d = await readCv(r.file);
+          r.cv_text = d.parsed.text; r.name = d.name; r.email = d.email;
+          if (d.reason) { r.state = "fail"; r.note = d.reason; }
+          else { r.state = "ready"; r.detected = true; }
+        } catch (e) { console.warn(e); r.state = "fail"; r.note = "Couldn’t open this PDF. It may be damaged or password-protected."; }
+        validate(r); draw();
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    revalidate();
+  }
+  const inp = $("input", $b("#bdrop"));
+  inp.onchange = () => { addFiles([...inp.files]); inp.value = ""; };
+  enableDragDrop($b("#bdrop"), addFiles);
+  $b("#bgo").onclick = async () => {
+    const todo = rows.filter(ready); if (!todo.length) return;
+    running = true; draw();
+    const role = $b("#brole").value;
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const r = todo[next++]; r.state = "saving"; draw();
+        try {
+          const email = r.email.trim().toLowerCase(), name = r.name.trim().slice(0, 200);
+          const path = `recruiter/${uid()}.pdf`;
+          await q(sb.storage.from("ats-cvs").upload(path, r.file, { contentType: "application/pdf", upsert: false }));
+          const cv = { cv_path: path, cv_name: r.file.name.slice(0, 200), cv_text: (r.cv_text || "").slice(0, 60000) };
+          let ex = findByEmail(email), cand;
+          if (!ex) {
+            const ins = await sb.from("ats_candidates").insert({ name, email, source: "recruiter", ...cv }).select().single();
+            if (ins.error && ins.error.code === "23505") ex = await q(sb.from("ats_candidates").select("*").eq("email", email).maybeSingle());
+            else if (ins.error) throw ins.error;
+            else cand = ins.data;
+          }
+          if (ex) cand = await q(sb.from("ats_candidates").update(mergePatch(ex, {}, cv)).eq("id", ex.id).select().single());
+          if (role) await q(sb.from("ats_pipeline").upsert({ candidate_id: cand.id, role_id: role, stage: "Applied", source: "recruiter" }, { onConflict: "candidate_id,role_id", ignoreDuplicates: true }));
+          if (!ex) S.cands.push(cand); else S.cands = S.cands.map((c) => (c.id === cand.id ? cand : c));
+          r.state = ex ? "updated" : "added"; r.note = ex ? "New CV saved; their old CV was kept as a previous version." : "";
+        } catch (e) { console.warn(e); r.state = "error"; r.note = e?.message ? String(e.message).slice(0, 140) : "Couldn’t save this CV."; }
+        draw();
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    running = false; finished = true; layerDirty = false; draw();
+    const n = rows.filter((r) => ["added", "updated"].includes(r.state)).length;
+    toast(`${n} candidate${n === 1 ? "" : "s"} saved from CVs`);
+  };
+  draw();
 }
 
 /* ---------- delete candidates ---------- */

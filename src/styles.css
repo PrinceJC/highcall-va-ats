@@ -398,3 +398,15 @@ table.t td.num{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink
 
 /* never let flex shrink squash sections inside scrolling panels (keeps drawer tabs visible) */
 .drawer > *,.modal > *{flex-shrink:0}
+
+/* bulk CV upload */
+.drop.dragging{border-color:var(--green);background:var(--good-bg);color:var(--green)}
+.bulk-modal{width:min(900px,100%)}
+.bulkdrop{padding:26px 18px}
+.bulkdrop b{color:var(--ink)}
+.bulk-table table.t td{padding:10px 12px;vertical-align:top}
+.bulk-table table.t th{padding:10px 12px}
+.bulk-table .in{padding:7px 9px;font-size:13.5px;min-width:150px}
+.bulk-table tr.skip td{background:#FFF8F7}
+.bulk-table td.bfile{max-width:170px}
+.bulk-table td.bfile span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-top:8px;color:var(--ink)}
