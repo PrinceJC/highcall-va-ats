@@ -39,6 +39,7 @@ function writeErr(e) {
   else toast(e?.message ? "Couldn’t save: " + e.message : "That didn’t save. Check your connection and try again.");
 }
 const ICON = {
+  setup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>',
   dash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
@@ -134,14 +135,14 @@ function render() {
   update(r);
 }
 function refresh() { if (S.ui.route) render(); }
-const CRUMB = { dashboard: "Dashboard", roles: "Roles", pool: "Talent pool", config: "Settings" };
+const CRUMB = { dashboard: "Dashboard", roles: "Roles", pool: "Talent pool", config: "Hiring setup" };
 const manilaDate = () => new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }).format(new Date());
 function shell(r) {
   if (r === "careers" || r === "login" || r === "noaccess" || r === "setpw") {
     const bar = S.isRecruiter && r === "careers" ? `<div class="previewbar"><span>You’re viewing the public careers page</span><a class="btn sm" href="#dashboard">Back to recruiting</a></div>` : "";
     return `<div class="app public">${bar}<div id="view"></div></div>`;
   }
-  const nav = [["dashboard", "Dashboard", ICON.dash], ["roles", "Roles", ICON.roles], ["pool", "Talent pool", ICON.pool], ["careers", "Careers page", ICON.careers]];
+  const nav = [["dashboard", "Dashboard", ICON.dash], ["roles", "Roles", ICON.roles], ["pool", "Talent pool", ICON.pool], ["careers", "Careers page", ICON.careers], ["config", "Hiring setup", ICON.setup]];
   const cur = r.startsWith("role-") ? "roles" : r;
   const role = r.startsWith("role-") ? roleById(r.slice(5)) : null;
   const crumb = role ? `<a href="#roles" style="color:inherit;text-decoration:none">Roles</a><i>/</i><b>${esc(role.title)}</b>` : `<b>${CRUMB[cur] || ""}</b>`;
@@ -152,7 +153,6 @@ function shell(r) {
       <div class="brand"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
       <nav class="nav side-main" aria-label="Main navigation">${nav.map(navLink).join("")}</nav>
       <div class="side-bottom">
-        <nav class="nav" aria-label="Settings">${navLink(["config", "Settings", ICON.settings])}</nav>
         <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong title="${esc(S.staff?.email || S.session?.user?.email || "")}">${esc(S.staff?.name || S.staff?.email || S.session?.user?.email || "HighCall VA Recruiting")}</strong><small>${S.isAdmin ? "Admin" : "Recruiter"} workspace</small></div></div>
         <a href="#" id="signout" class="side-signout">${ICON.logout}Sign out</a>
       </div>
@@ -300,7 +300,7 @@ function viewSetPassword(v) {
 function viewNoAccess(v) {
   v.innerHTML = `${authOpen()}
     <h1>This area is for recruiters</h1>
-    <p class="muted">You’re signed in as ${esc(S.session?.user?.email)}, which doesn’t have recruiter access to the ATS. DeviceCare access is separate. Ask an ATS admin to add you in Settings, Team.</p>
+    <p class="muted">You’re signed in as ${esc(S.session?.user?.email)}, which doesn’t have recruiter access to the ATS. DeviceCare access is separate. Ask an ATS admin to add you in Hiring setup, Team.</p>
     <div class="row"><a class="btn" href="#careers">Go to careers page</a><button class="btn ghost" id="so">Sign out</button></div>${authClose}`;
   $("#so", v).onclick = signOut;
 }
@@ -621,7 +621,7 @@ function drawDash(box, d) {
     <div class="cardhead"><div><h2>Recruiter activity</h2><p>What each recruiter did ${per}</p></div><a class="link" href="#config">Manage team ${ICON.arrow}</a></div>
     <div class="table-wrap">${recruiters.length ? `<table class="t"><thead><tr><th>Recruiter</th><th>Added to pool</th><th>Copied into roles</th><th>Shortlisted</th><th>Hired</th><th>Emails sent</th><th>Last active</th></tr></thead><tbody>
       ${recruiters.map((r) => `<tr><td class="who"><b>${esc(r.name)}</b><span>${r.role === "admin" ? "Admin" : "Recruiter"}</span></td><td class="num">${r.added}</td><td class="num">${r.copied}</td><td class="num">${r.shortlisted}</td><td class="num">${r.hired}</td><td class="num">${sentInPeriod(d, r.user_id)}</td><td class="muted">${r.last_active ? ago(r.last_active) : "No activity yet"}</td></tr>`).join("")}
-    </tbody></table>` : `<div class="empty"><p>No recruiters yet. Add your team in Settings.</p></div>`}</div>
+    </tbody></table>` : `<div class="empty"><p>No recruiters yet. Add your team in Hiring setup.</p></div>`}</div>
   </div>
   <div class="panel">
     <div class="cardhead"><div><h2>Open roles</h2><p>Applications ${per} and where each pipeline stands now</p></div><a class="link" href="#roles">All roles ${ICON.arrow}</a></div>
@@ -1005,6 +1005,7 @@ async function callEmailFn(body) {
     let msg = error.message || "Email could not be sent.";
     try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch {}
     if (/Failed to send a request|FunctionsFetchError|not found/i.test(msg)) msg = "The email service isn’t deployed yet. Deploy the ats-send-email function in Supabase (see README).";
+    msg = msg.replace(/Settings, Email sender/g, "Hiring setup, Email sender");
     throw new Error(msg);
   }
   return data;
@@ -1218,7 +1219,7 @@ function viewSettings(v) {
   S.ui.redrawSettings = false; v.dataset.v = "config";
   let qs = questionsFor(null).map((x) => ({ ...x }));
   const brand = S.settings.email_branding || {};
-  v.innerHTML = `${pageHead("Admin", "Settings", "Careers page details, talent pool screening and your team.")}
+  v.innerHTML = `${pageHead("Admin", "Hiring setup", "Your careers page, screening questions, candidate emails and team access.")}
   <div class="stack" style="max-width:760px">
     <form class="card stack" id="site"><h3 style="font-size:17px">Careers page</h3>
       <label class="f">Careers page intro<textarea class="in" name="intro">${esc(S.settings.careers_intro)}</textarea></label>
