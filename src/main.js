@@ -243,9 +243,9 @@ function authOpen() {
       <small class="art-foot">Hire with care. Grow with your people.</small>
     </div>
     <div class="formside">
-      <svg class="auth-swoosh" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="authsw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A5D334"/><stop offset=".55" stop-color="#83DEAD"/><stop offset="1" stop-color="#6FE3EC"/></linearGradient></defs>
-        <path vector-effect="non-scaling-stroke" d="M 8 200 C 120 200, 200 190, 262 164 C 300 146, 318 132, 348 146 C 388 166, 432 162, 474 120 C 522 72, 556 44, 592 22" fill="none" stroke="url(#authsw)" stroke-width="12" stroke-linecap="round"/>
+      <svg class="auth-swoosh" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="authsw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FE3EC"/><stop offset=".5" stop-color="#83DEAD"/><stop offset="1" stop-color="#A5D334"/></linearGradient></defs>
+        <path vector-effect="non-scaling-stroke" d="M 45 955 C 78 760, 100 520, 165 468 C 262 396, 402 868, 560 878 C 720 888, 832 640, 955 60" fill="none" stroke="url(#authsw)" stroke-width="38" stroke-linecap="round"/>
       </svg>
       <div class="formcard">`;
 }
