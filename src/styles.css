@@ -343,8 +343,12 @@ table.t td.num{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink
 
 /* ---------- sign in ---------- */
 .auth{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:100vh}
-.auth .art{background:var(--side);color:var(--side-ink);padding:44px clamp(28px,5.2vw,76px) 40px;display:flex;flex-direction:column;position:relative;overflow:hidden;isolation:isolate}
-.auth .art .brand{padding:0;position:relative;z-index:1}
+.auth .art{background:var(--side);color:var(--side-ink);padding:48px 62px;display:flex;flex-direction:column;position:relative;overflow:hidden;isolation:isolate}
+/* sign-in brand: same size as DeviceCare's large brand */
+.auth .art .brand{display:flex;align-items:center;gap:10px;padding:0;position:relative;z-index:1}
+.auth .art .brand img{width:64px;height:auto;flex:none}
+.auth .art .brand b{display:block;color:#fff;font-size:25px;font-weight:750;letter-spacing:-.5px;line-height:1.1}
+.auth .art .brand span{display:block;margin-top:4px;font-size:8px;letter-spacing:1.3px;line-height:1.6;text-transform:uppercase;color:#a8c6bc;max-width:145px}
 /* careers background: DeviceCare-style rings plus faint candidate cards moving along the hiring path */
 .art-bg{position:absolute;inset:0;z-index:-1;pointer-events:none}
 .art-bg .rings{position:absolute;inset:0;width:100%;height:100%}
@@ -362,20 +366,20 @@ table.t td.num{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink
 .ccard.c1{right:7%;top:15%;opacity:.75}
 .ccard.c2{right:4%;top:47%;opacity:.6}
 .ccard.c3{right:12%;bottom:12%;opacity:.85}
-.art-copy{margin:auto 0;padding:48px 0;max-width:560px;position:relative;z-index:1}
-.art-eyebrow{margin:0 0 22px;font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--lime)}
-.auth .art h2{color:#F1F7EF;font-size:clamp(38px,4.2vw,60px);font-weight:800;letter-spacing:-.035em;line-height:1.12;margin:0}
-.auth .art .art-lead{margin:26px 0 0;max-width:44ch;font-size:17px;line-height:1.85;color:#B9CCC6;opacity:1}
-.art-points{list-style:none;margin:30px 0 0;padding:0;display:flex;flex-direction:column;gap:16px}
-.art-points li{display:flex;align-items:center;gap:16px;font-size:15px;color:#E8F0EE}
-.art-points svg{width:18px;height:18px;color:var(--lime);flex:none}
-.art-foot{position:relative;z-index:1;font-size:13px;color:#8EA8A4}
+.art-copy{margin:auto 0;padding:80px 0;max-width:480px;position:relative;z-index:1}
+.art-eyebrow{margin:0;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b7d479}
+.auth .art h2{color:#eff5e9;font-size:clamp(36px,3.3vw,52px);font-weight:650;letter-spacing:-1.7px;line-height:1.2;margin:22px 0}
+.auth .art .art-lead{margin:0;max-width:365px;font-size:14px;line-height:1.9;color:#a3beb1;opacity:1}
+.art-points{list-style:none;margin:35px 0 0;padding:0;display:flex;flex-direction:column;gap:18px}
+.art-points li{display:flex;align-items:center;gap:12px;font-size:12px;color:#d3e3d5}
+.art-points svg{width:17px;height:17px;color:#b5d85a;flex:none}
+.art-foot{position:relative;z-index:1;font-size:10px;color:#8aaa9a}
 @media (max-width:1560px){.ccard.c2{display:none}}
 @media (max-width:1100px){.ccard{display:none}}
 .auth .formside{display:flex;align-items:center;justify-content:center;padding:40px 20px;background:var(--bg)}
 .auth .formcard{width:min(420px,100%)}
 .auth .formcard h1{font-size:30px;font-weight:800;margin-bottom:8px}
-@media (max-width:860px){.auth{grid-template-columns:1fr}.auth .art{min-height:auto;padding:28px 24px}.art-copy{padding:28px 0 8px}.auth .art h2{font-size:32px}.art-eyebrow{margin-bottom:14px}.art-points,.art-foot{display:none}.auth .art .art-lead{margin-top:14px;font-size:15px;line-height:1.6}}
+@media (max-width:860px){.auth{grid-template-columns:1fr}.auth .art{min-height:auto;padding:28px 24px}.art-copy{padding:28px 0 8px}.auth .art h2{font-size:30px;margin:14px 0}.art-eyebrow{margin-bottom:0}.art-points,.art-foot{display:none}.auth .art .art-lead{margin-top:14px;font-size:15px;line-height:1.6}}
 
 /* offers & exits */
 .dashgrid2{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:30px;align-items:start}
