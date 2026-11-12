@@ -176,7 +176,27 @@ function bindShell() {
 function pageHead(eyebrow, title, sub, actions = "") {
   return `<div class="pagehead"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>${actions ? `<div class="actions">${actions}</div>` : ""}</div>`;
 }
-async function signOut() { await sb.auth.signOut(); location.hash = "careers"; }
+// Sign out fully before leaving the page: end the session on the server and in this browser,
+// clear everything loaded into memory, then show the sign-in page.
+let signingOut = false;
+async function signOut() {
+  if (signingOut) return;
+  signingOut = true;
+  const btn = $("#signout"); if (btn) { btn.style.pointerEvents = "none"; btn.lastChild.textContent = "Signing out…"; }
+  try { await sb.auth.signOut(); } catch (e) { console.warn("Server sign-out failed; clearing this browser anyway", e); }
+  try { await sb.auth.signOut({ scope: "local" }); } catch {}
+  clearSignedInState();
+  S.justSignedOut = true;
+  signingOut = false;
+  mounted = null;
+  if (location.hash === "#login") route(); else location.hash = "login";
+}
+function clearSignedInState() {
+  S.session = null; S.staff = null; S.isAdmin = S.isRecruiter = S.isMember = false;
+  S.cands = []; S.pipes = []; S.templates = []; S.team = []; S.mailTemplates = []; S.emails = []; S.dash = null;
+  S.ui.sel.clear(); S.recovery = false;
+  closeLayer();
+}
 function update(r) {
   const v = $("#view"); if (!v) return;
   $$("[data-count]").forEach((el) => { const k = el.dataset.count; el.textContent = k === "roles" ? S.roles.filter((x) => x.status === "public" || x.status === "internal").length || "" : k === "pool" ? S.cands.length || "" : ""; });
@@ -228,6 +248,7 @@ function viewLogin(v, mode = "signin") {
   const reset = mode === "reset";
   v.innerHTML = `${authOpen()}
     <h1>${reset ? "Reset your password" : "Team sign in"}</h1>
+    ${S.justSignedOut && !reset ? `<div class="note" style="margin-bottom:18px">You’re signed out.</div>` : ""}
     <p class="muted" style="margin:0 0 20px">${reset ? "Enter your HCVA login email and we’ll send a link to set a new password." : "Use your HCVA login. It’s the same email and password you use for DeviceCare."}</p>
     <form class="stack" id="lf" novalidate>
       <label class="f">Email<input class="in" type="email" name="email" required autocomplete="username"></label>
@@ -1324,6 +1345,8 @@ async function start() {
   sb.auth.onAuthStateChange((event, s) => {
     if (event === "PASSWORD_RECOVERY") { S.recovery = true; if (booted) setTimeout(() => { S.session = s; mounted = null; route(); }, 0); return; }
     if (!booted || (event !== "SIGNED_IN" && event !== "SIGNED_OUT")) return;
+    if (event === "SIGNED_OUT" && signingOut) return; // our own sign-out handles the page
+    if (event === "SIGNED_IN") S.justSignedOut = false;
     if ((s?.user?.id || null) === (S.session?.user?.id || null)) return;
     setTimeout(async () => { S.ready = false; mounted = null; refresh(); await setSession(s); await loadAll(); mounted = null; route(); }, 0);
   });
