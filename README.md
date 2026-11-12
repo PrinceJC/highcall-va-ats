@@ -44,7 +44,7 @@ Run it the same way you ran the first one:
 2. Copy the file into the DeviceCare repo's `supabase/migrations/` folder and commit it.
 3. Before your next `supabase db push` from DeviceCare, mark both ATS files as applied:
    ```powershell
-   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000
+   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000
    ```
 
 **Then the offers and outcomes update:** run `for-devicecare-repo/supabase/migrations/20261112140000_ats_outcomes.sql` the same way. It adds:
@@ -56,10 +56,43 @@ Run it the same way you ran the first one:
 
 When you repair the migration history later, include all four versions:
 ```powershell
-npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000
+npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000
 ```
 
 Stage history starts from the moment this runs. Anything already in a pipeline is back-filled with the best available dates.
+
+
+## Candidate emails (templates, red/green tracking)
+
+Recruiters email candidates from the ATS using branded templates. Candidates who moved to Shortlisted, Screening, Interview, Offer, Hired or Rejected show **red "Email needed"** until they're emailed for that stage, then **green**. Emails are sent by a small server function through your existing **Resend** account; DeviceCare's email function isn't touched.
+
+**1. Database:** run `for-devicecare-repo/supabase/migrations/20261112160000_ats_emails.sql` in the SQL Editor, then copy it into the DeviceCare repo's `supabase/migrations/`.
+
+**2. Email function:** from your **DeviceCare** folder:
+
+1. Copy the folder `for-devicecare-repo/supabase/functions/ats-send-email` into DeviceCare's `supabase/functions/`.
+2. Add these lines to the end of DeviceCare's `supabase/config.toml`:
+   ```toml
+   [functions.ats-send-email]
+   verify_jwt = false
+   ```
+3. Check that the Resend key is already there (DeviceCare uses it):
+   ```powershell
+   npx supabase secrets list
+   ```
+   You should see `RESEND_API_KEY`.
+4. Tell the function which website may use it. Use your ATS Vercel URL; this doesn't change DeviceCare's `APP_ORIGIN`:
+   ```powershell
+   npx supabase secrets set ATS_APP_ORIGIN=https://YOUR-ATS.vercel.app ATS_ALLOW_LOCALHOST=true
+   ```
+5. Deploy it:
+   ```powershell
+   npx supabase functions deploy ats-send-email --no-verify-jwt
+   ```
+
+**3. Sender:** in the ATS, go to **Settings → Email sender** and set the sender email. It must be on a domain verified in Resend, such as the one DeviceCare already sends from. Then click **Send me a test** on any template.
+
+The logo in emails loads from `https://YOUR-ATS.vercel.app/email-logo.png`, so it appears once the ATS is deployed. Set `ATS_ALLOW_LOCALHOST=false` once you no longer test locally.
 
 ## 1. Add the database changes through the DeviceCare repo
 

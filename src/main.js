@@ -11,7 +11,7 @@ const APP_NAME = "HighCall Careers"; // product name in the sidebar, like "Devic
 const STATUS_LABEL = { draft: "Draft", public: "Public", internal: "Internal", archived: "Archived" };
 const S = {
   session: null, staff: null, recovery: false, isRecruiter: false, isAdmin: false, isMember: false,
-  roles: [], cands: [], pipes: [], templates: [], settings: {}, team: [],
+  roles: [], cands: [], pipes: [], templates: [], settings: {}, team: [], mailTemplates: [], emails: [],
   ready: false, loadError: "",
   ui: { route: null, poolQ: "", roleQ: "", stage: "all", roleTab: "active", sel: new Set(), f: {}, targetRole: "", openJob: null },
 };
@@ -100,11 +100,13 @@ async function loadAll() {
       q(sb.from("ats_pipeline").select("*")),
       q(sb.from("ats_screening_templates").select("*")),
       q(sb.from("ats_staff").select("*").order("created_at")),
+      q(sb.from("ats_email_templates").select("*").order("name")).catch(() => []),
+      q(sb.from("ats_emails").select("id,candidate_id,pipeline_id,role_id,stage,template_id,to_email,subject,status,error,sent_by,created_at").order("created_at", { ascending: false }).limit(5000)).catch(() => []),
     );
-    const [settings, roles, cands, pipes, templates, team] = await Promise.all(jobs);
+    const [settings, roles, cands, pipes, templates, team, mailTemplates, emails] = await Promise.all(jobs);
     S.settings = Object.fromEntries((settings || []).map((r) => [r.key, r.value]));
     S.roles = roles || [];
-    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || [];
+    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || []; S.mailTemplates = mailTemplates || []; S.emails = emails || [];
   } catch (e) { console.error(e); S.loadError = "Couldn’t load data. Check your connection and refresh."; }
   S.ready = true;
 }
@@ -482,6 +484,7 @@ function drawBanner(el) {
   let title, text, btn;
   if (!open.length) { title = "Your first hire starts here"; text = "Create a role, add screening questions and minimum specs, then publish it to the careers page."; btn = `<button class="btn" data-b="new">Create a role ${ICON.arrow}</button>`; }
   else if (total) { title = `${total} new application${total === 1 ? "" : "s"} waiting for review`; text = `Most are for ${esc(waiting[0].r.title)}. Shortlist the strongest candidates to keep things moving.`; btn = `<button class="btn" data-b="role-${esc(waiting[0].r.id)}">Review applications ${ICON.arrow}</button>`; }
+  else if (waitingForEmail().length) { const w = waitingForEmail().length; title = `${w} candidate${w === 1 ? " is" : "s are"} waiting for an email`; text = "They moved to a new stage but haven’t been told yet. Send each one a quick update below."; btn = ""; }
   else { title = "You’re all caught up"; text = "No new applications are waiting. Search the talent pool for people to bring into your open roles."; btn = `<button class="btn" data-b="pool">Search talent pool ${ICON.arrow}</button>`; }
   el.innerHTML = `<div class="banner"><div class="ico">${ICON.check}</div><div><b>${title}</b><span>${text}</span></div>${btn}</div>`;
   const b = $("[data-b]", el); if (b) b.onclick = () => (b.dataset.b === "new" ? openRoleEditor() : go(b.dataset.b));
@@ -533,6 +536,7 @@ function drawDash(box, d) {
     ${statCard("Hired", n("hired"), n("hired") ? `Hires ${per}` : `No hires ${per} yet`, ICON.check, n("hired") ? "" : "muted")}
     ${statCard("Added by recruiters", n("recruiter_added"), `Sourced into the talent pool ${per}`, ICON.userplus)}
   </div>
+  ${mailPanel(d)}
   <div class="dashgrid">
     <div class="panel">
       <div class="cardhead"><div><h2>Hiring funnel</h2><p>How far candidates got ${per}. Each person counts once at the furthest stage they reached.</p></div><a class="link" href="#roles">View roles ${ICON.arrow}</a></div>
@@ -569,8 +573,8 @@ function drawDash(box, d) {
   </div>
   <div class="panel" style="margin-bottom:30px">
     <div class="cardhead"><div><h2>Recruiter activity</h2><p>What each recruiter did ${per}</p></div><a class="link" href="#config">Manage team ${ICON.arrow}</a></div>
-    <div class="table-wrap">${recruiters.length ? `<table class="t"><thead><tr><th>Recruiter</th><th>Added to pool</th><th>Copied into roles</th><th>Shortlisted</th><th>Hired</th><th>Last active</th></tr></thead><tbody>
-      ${recruiters.map((r) => `<tr><td class="who"><b>${esc(r.name)}</b><span>${r.role === "admin" ? "Admin" : "Recruiter"}</span></td><td class="num">${r.added}</td><td class="num">${r.copied}</td><td class="num">${r.shortlisted}</td><td class="num">${r.hired}</td><td class="muted">${r.last_active ? ago(r.last_active) : "No activity yet"}</td></tr>`).join("")}
+    <div class="table-wrap">${recruiters.length ? `<table class="t"><thead><tr><th>Recruiter</th><th>Added to pool</th><th>Copied into roles</th><th>Shortlisted</th><th>Hired</th><th>Emails sent</th><th>Last active</th></tr></thead><tbody>
+      ${recruiters.map((r) => `<tr><td class="who"><b>${esc(r.name)}</b><span>${r.role === "admin" ? "Admin" : "Recruiter"}</span></td><td class="num">${r.added}</td><td class="num">${r.copied}</td><td class="num">${r.shortlisted}</td><td class="num">${r.hired}</td><td class="num">${sentInPeriod(d, r.user_id)}</td><td class="muted">${r.last_active ? ago(r.last_active) : "No activity yet"}</td></tr>`).join("")}
     </tbody></table>` : `<div class="empty"><p>No recruiters yet. Add your team in Settings.</p></div>`}</div>
   </div>
   <div class="panel">
@@ -580,7 +584,28 @@ function drawDash(box, d) {
     </tbody></table>` : `<div class="empty">${ICON.roles}<h3>No open roles</h3><p>Publish a role to start receiving applications.</p><button class="btn primary" id="dnew2">${ICON.plus}New role</button></div>`}</div>
   </div>`;
   $$("[data-go]", box).forEach((el) => (el.onclick = () => go(el.dataset.go)));
+  $$("[data-mail]", box).forEach((el) => (el.onclick = () => { const [cid, rid] = el.dataset.mail.split("|"); openCompose(cid, rid); }));
+  $$("[data-who]", box).forEach((el) => (el.onclick = () => { const [cid, rid] = el.dataset.who.split("|"); openDrawer(cid, rid); }));
   const n2 = $("#dnew2", box); if (n2) n2.onclick = () => openRoleEditor();
+}
+
+function sentInPeriod(d, userId) {
+  const from = d.from ? ts(d.from) : -Infinity, to = d.to ? ts(d.to) : Infinity;
+  return S.emails.filter((e) => e.status === "sent" && (!userId || e.sent_by === userId) && ts(e.created_at) >= from && ts(e.created_at) < to).length;
+}
+function mailPanel(d) {
+  const list = waitingForEmail(), per = periodLabel(d.period), sent = sentInPeriod(d);
+  return `<div class="panel" style="margin-bottom:30px">
+    <div class="cardhead"><div><h2>Waiting for an email ${list.length ? `<span class="badge bad" style="vertical-align:middle;margin-left:6px">${list.length}</span>` : ""}</h2>
+      <p>Candidates who moved forward or were rejected but haven’t been emailed yet. ${sent} email${sent === 1 ? "" : "s"} sent ${per}.</p></div></div>
+    ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Moved to</th><th>Waiting</th><th></th></tr></thead><tbody>
+      ${list.slice(0, 10).map((p) => { const c = candById(p.candidate_id); return `<tr><td class="who"><a href="#" data-who="${esc(c.id)}|${esc(p.role_id)}" style="text-decoration:none"><b>${esc(c.name)}</b></a><span>${esc(c.email || "No email on file")}</span></td>
+        <td>${esc(roleTitle(p.role_id))}</td><td><span class="badge ${p.stage === "Rejected" ? "bad" : p.stage === "Hired" ? "ok" : ""}">${esc(p.stage)}</span></td>
+        <td><span class="badge bad"><span class="dot"></span>${ago(p.stage_changed_at)}</span></td>
+        <td style="text-align:right"><button class="btn sm primary" data-mail="${esc(c.id)}|${esc(p.role_id)}">${ICON.send}Email</button></td></tr>`; }).join("")}
+    </tbody></table></div>${list.length > 10 ? `<p class="muted small" style="padding:12px 20px;margin:0">and ${list.length - 10} more. Open each role to see everyone.</p>` : ""}`
+    : `<div class="empty" style="padding:30px 20px"><p style="margin:0">Everyone has been told about their latest stage.</p></div>`}
+  </div>`;
 }
 
 /* ---------- roles ---------- */
@@ -721,13 +746,14 @@ function drawRoleList(v, id) {
   const { err, list } = searchList(es, S.ui.roleQ, titlesFor);
   $("#rqerr", v).innerHTML = err ? `<div class="qerr">Search syntax: ${esc(err)}. Showing a simple keyword match instead.</div>` : "";
   list.sort((a, b) => ts(b.appliedAt) - ts(a.appliedAt));
-  $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th>Candidate</th><th>Stage</th><th>Setup</th><th>Rating</th><th>Source</th><th>Added</th></tr></thead><tbody>
+  $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th>Candidate</th><th>Stage</th><th>Email</th><th>Setup</th><th>Rating</th><th>Added</th></tr></thead><tbody>
     ${list.map((e) => { const c = e.cand, rd = readiness(c, role), rt = e.pipe.rating || 0;
       return `<tr data-c="${esc(c.id)}"><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span></td>
       <td><span class="badge ${e.stage === "Hired" ? "ok" : e.stage === "Rejected" ? "bad" : e.stage === "Withdrawn" ? "draft" : ""}">${e.stage}</span>${e.stage === "Hired" ? (c.va_person_id ? ` <span class="muted small">In DeviceCare</span>` : ` <span class="muted small">Not in DeviceCare yet</span>`) : ""}</td>
+      <td>${emailBadge(e.pipe, { short: true })}</td>
       <td><span class="badge ${rd.cls}">${esc(rd.label)}</span></td>
       <td>${rt ? `<span style="color:#E2B007">${"★".repeat(rt)}</span><span style="color:var(--line)">${"★".repeat(5 - rt)}</span>` : `<span class="muted">Not rated</span>`}</td>
-      <td class="muted">${e.pipe.source === "applied" ? "Applied" : e.pipe.source === "sourced" ? "From pool" : "Added by recruiter"}</td><td class="muted">${ago(e.appliedAt)}</td></tr>`; }).join("")}</tbody></table>`
+      <td class="muted">${ago(e.appliedAt)}<br><span class="small">${e.pipe.source === "applied" ? "Applied" : e.pipe.source === "sourced" ? "From pool" : "Added by recruiter"}</span></td></tr>`; }).join("")}</tbody></table>`
     : `<div class="empty">${roleEntries(id).length ? `<h3>No matches</h3><p>Try a different stage or search.</p>` : `<h3>No candidates yet</h3><p>${role.status === "public" ? "Applications from the careers page land here." : role.status === "internal" ? "Team members who apply internally land here." : "Publish the role so candidates can apply, or copy people in from the talent pool."}</p><button class="btn primary" data-fp>Copy from talent pool</button>`}</div>`;
   $$("tr[data-c]", v).forEach((tr) => (tr.onclick = () => openDrawer(tr.dataset.c, id)));
   const fp = $("[data-fp]", v); if (fp) fp.onclick = () => { S.ui.targetRole = id; go("pool"); };
@@ -901,6 +927,103 @@ function confirmDelete(ids, after) {
   };
 }
 
+
+/* ---------- candidate emails ---------- */
+// Moving someone into one of these stages means they should hear from us.
+const NOTIFY_STAGES = ["Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected"];
+const TEMPLATE_PURPOSES = ["Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Other"];
+const PLACEHOLDERS = [["{{first_name}}", "Candidate’s first name"], ["{{full_name}}", "Candidate’s full name"], ["{{role}}", "Role title"], ["{{recruiter_name}}", "Your name"], ["{{recruiter_email}}", "Your email"]];
+/** null = no email expected for this stage; {needed:true} = red; {ok:true, at} = green */
+function emailState(pipe) {
+  if (!pipe || !pipe.role_id || !NOTIFY_STAGES.includes(pipe.stage)) return null;
+  const since = ts(pipe.stage_changed_at || pipe.updated_at);
+  const done = S.emails.find((e) => e.pipeline_id === pipe.id && (e.status === "sent" || e.status === "manual") && ts(e.created_at) >= since - 1000);
+  return done ? { ok: true, at: done.created_at, manual: done.status === "manual" } : { needed: true };
+}
+function emailBadge(pipe, { short = false } = {}) {
+  const st = emailState(pipe);
+  if (!st) return `<span class="muted small">No email needed</span>`;
+  if (st.needed) return `<span class="badge bad"><span class="dot"></span>${short ? "Email needed" : `Email needed: ${esc(pipe.stage)}`}</span>`;
+  return `<span class="badge ok"><span class="dot"></span>${st.manual ? "Marked emailed" : "Emailed"} ${fmtDate(st.at)}</span>`;
+}
+const waitingForEmail = () => S.pipes.filter((p) => emailState(p)?.needed && candById(p.candidate_id) && roleById(p.role_id)).sort((a, b) => ts(a.stage_changed_at) - ts(b.stage_changed_at));
+function fillVars(text, c, roleId) {
+  const me = S.team.find((t) => t.user_id === S.session?.user?.id);
+  const vars = { first_name: (c?.name || "").trim().split(/\s+/)[0] || "there", full_name: c?.name || "", role: roleId ? roleTitle(roleId) : "the role",
+    recruiter_name: me?.name || S.session?.user?.email || "", recruiter_email: me?.email || S.session?.user?.email || "", company: "HighCall VA" };
+  return String(text || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => (k.toLowerCase() in vars ? vars[k.toLowerCase()] : m));
+}
+async function callEmailFn(body) {
+  const { data, error } = await sb.functions.invoke("ats-send-email", { body });
+  if (error) {
+    let msg = error.message || "Email could not be sent.";
+    try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch {}
+    if (/Failed to send a request|FunctionsFetchError|not found/i.test(msg)) msg = "The email service isn’t deployed yet. Deploy the ats-send-email function in Supabase (see README).";
+    throw new Error(msg);
+  }
+  return data;
+}
+function openCompose(cid, roleId, { afterStage = false } = {}) {
+  const c = candById(cid); if (!c) return;
+  const pipe = roleId ? pipeFor(cid, roleId) : null;
+  const stage = pipe?.stage || "";
+  const tpls = S.mailTemplates;
+  const suggested = tpls.find((t) => t.purpose === stage) || null;
+  const noEmail = !/^\S+@\S+\.\S+$/.test(c.email || "");
+  const m = openLayer(`<form class="modal" novalidate>
+    <div class="dhead"><div><h2>Email ${esc(c.name)}</h2><div class="muted small" style="margin-top:4px">${esc(c.email || "No email on file")}${roleId ? ` · ${esc(roleTitle(roleId))}${stage ? ` · ${esc(stage)}` : ""}` : ""}</div></div>
+      <button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    ${afterStage ? `<div class="note">Moved to <b>${esc(stage)}</b>. Let ${esc((c.name || "").split(" ")[0] || "them")} know with an email.</div>` : ""}
+    ${noEmail ? `<div class="note warn">This candidate has no valid email address. Add one in their profile first, or mark them as told another way.</div>` : ""}
+    <label class="f">Template<select class="in" name="tpl"><option value="">Blank email</option>${tpls.map((t) => `<option value="${esc(t.id)}" ${suggested?.id === t.id ? "selected" : ""}>${esc(t.name)}${t.purpose !== "Other" ? ` (${esc(t.purpose)})` : ""}</option>`).join("")}</select></label>
+    <label class="f">Subject<input class="in" name="subject" maxlength="200" required></label>
+    <label class="f">Message<span class="hint">Replace anything in [square brackets] before sending.</span><textarea class="in" name="body" style="min-height:260px;font-size:14.5px;line-height:1.6" required></textarea></label>
+    <div class="qerr hidden" id="cerr" role="alert"></div>
+    <div class="row mfoot" style="justify-content:flex-end">
+      ${pipe && NOTIFY_STAGES.includes(stage) ? `<button type="button" class="btn ghost sm" id="markdone" style="margin-right:auto">Mark as told another way</button>` : ""}
+      <button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" id="sendbtn" ${noEmail ? "disabled" : ""}>Send email</button></div>
+  </form>`);
+  const apply = (id) => { const t = tpls.find((x) => x.id === id); m.elements.subject.value = t ? fillVars(t.subject, c, roleId) : ""; m.elements.body.value = t ? fillVars(t.body, c, roleId) : fillVars("Hi {{first_name}},\n\n\n\nBest regards,\n{{recruiter_name}}\nHighCall VA Recruitment", c, roleId); };
+  apply(suggested?.id || "");
+  m.elements.tpl.onchange = () => { if (layerDirty && !confirm("Replace your edits with this template?")) return; apply(m.elements.tpl.value); layerDirty = false; };
+  m.elements.tpl.setAttribute("data-nodirty", "");
+  layerDirty = false;
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  const md = $("#markdone", m);
+  if (md) md.onclick = async () => {
+    const note = prompt("How did you let them know? (optional)", "Phone call");
+    if (note === null) return;
+    try { await q(sb.rpc("ats_mark_emailed", { p_pipeline_id: pipe.id, p_note: note })); layerDirty = false; closeLayer(); toast("Marked as told"); await reload(); }
+    catch (e) { writeErr(e); }
+  };
+  m.onsubmit = async (e) => {
+    e.preventDefault(); const err = $("#cerr", m); err.classList.add("hidden");
+    const subject = m.elements.subject.value.trim(), body = m.elements.body.value.trim();
+    const fail = (t) => { err.textContent = t; err.classList.remove("hidden"); };
+    if (!subject) return fail("Add a subject.");
+    if (!body) return fail("Write the message.");
+    const open = (subject + "\n" + body).match(/\[[^\]\n]{2,80}\]|\{\{[^}]+\}\}/);
+    if (open && !confirm(`This email still contains “${open[0]}”. Send anyway?`)) return;
+    const b = $("#sendbtn", m); b.disabled = true; b.textContent = "Sending…";
+    try {
+      await callEmailFn({ candidate_id: c.id, pipeline_id: pipe?.id || null, template_id: m.elements.tpl.value || null, subject, body });
+      layerDirty = false; closeLayer(); toast(`Email sent to ${c.name}`); await reload();
+    } catch (ex) { b.disabled = false; b.textContent = "Send email"; fail(ex.message); }
+  };
+}
+
+function mailHistory(cid) {
+  const list = S.emails.filter((e) => e.candidate_id === cid);
+  if (!list.length) return `<div class="empty"><h3>No emails yet</h3><p>Emails you send from HighCall Careers appear here.</p></div>`;
+  const who = (id) => { const t = S.team.find((x) => x.user_id === id); return t ? t.name || t.email : "A recruiter"; };
+  return `<div class="stack" style="gap:10px">${list.map((e) => `<div class="q" style="background:var(--surface)">
+    <div class="row" style="justify-content:space-between"><b style="color:var(--ink)">${esc(e.subject)}</b>
+      ${e.status === "sent" ? `<span class="badge ok">Sent</span>` : e.status === "manual" ? `<span class="badge">Told another way</span>` : e.status === "failed" ? `<span class="badge bad">Failed</span>` : `<span class="badge warn">Sending</span>`}</div>
+    <div class="muted small">${fmtDate(e.created_at)} ${new Date(e.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${esc(who(e.sent_by))}${e.role_id ? ` · ${esc(roleTitle(e.role_id))}` : ""}${e.stage ? ` · ${esc(e.stage)}` : ""}${e.status !== "manual" && e.to_email ? ` · to ${esc(e.to_email)}` : ""}</div>
+    ${e.status === "failed" && e.error ? `<div class="small" style="color:var(--bad)">${esc(e.error)}</div>` : ""}
+  </div>`).join("")}</div>`;
+}
+
 /* ---------- DeviceCare handover ---------- */
 const isHired = (c) => S.pipes.some((p) => p.candidate_id === c.id && p.stage === "Hired");
 function dcSection(c) {
@@ -938,9 +1061,11 @@ function openDrawer(cid, roleId, tab = "screen") {
     <div class="panel" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center">
       <div><div class="muted small">Screening for</div><select class="in" id="ctx" data-nodirty style="padding:5px 8px;font-weight:700;width:auto">${ctxOpts.map((r) => `<option value="${esc(r || "")}" ${r === roleId ? "selected" : ""}>${esc(roleTitle(r))}</option>`).join("")}</select></div>
       ${stage ? `<div><div class="muted small">Stage</div><select class="in" id="stage" data-nodirty style="padding:5px 8px;width:auto">${STAGES.map((s) => `<option value="${s}" ${s === stage ? "selected" : ""}>${STAGE_LABEL[s] || s}</option>`).join("")}</select></div>` : ""}
+      ${roleId && pipeFor(cid, roleId) ? `<div><div class="muted small">Email</div>${emailBadge(pipeFor(cid, roleId))}</div>` : ""}
+      <button type="button" class="btn sm" id="emailbtn" style="margin-left:auto">${ICON.send}Email candidate</button>
       <div><div class="muted small">Rating</div><div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-r="${n}" class="${n <= rating ? "on" : ""}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div></div>
     </div>
-    <div class="tabs" style="margin-bottom:0">${[["screen", "Screening"], ["profile", "Profile"], ["cv", "CV"]].map(([k, l]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="tabs" style="margin-bottom:0">${[["screen", "Screening"], ["profile", "Profile"], ["cv", "CV"], ["mail", `Emails${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length ? ` (${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length})` : ""}`]].map(([k, l]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div id="tscreen" class="${tab === "screen" ? "" : "hidden"}">
       <div class="sect"><h3>Screening questions</h3><div class="stack" id="qs"></div>
         <div class="row" style="margin-top:10px"><input class="in" id="newq" placeholder="Add a question to ${roleId ? "this role" : "talent pool screening"}" style="flex:1"><button class="btn sm" id="addq" type="button">${ICON.plus}Add</button></div></div>
@@ -990,9 +1115,11 @@ function openDrawer(cid, roleId, tab = "screen") {
         ${c.cv_text ? `<details><summary class="small muted" style="cursor:pointer">Searchable text from this CV</summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px;background:var(--sunk);padding:14px;border-radius:var(--r);margin-top:8px">${esc(c.cv_text)}</pre></details>` : ""}`
         : `<div class="empty"><h3>No CV on file</h3><p>Ask the candidate to apply again with a PDF.</p></div>`}
     </div>
+    <div id="tmail" class="${tab === "mail" ? "" : "hidden"}">${mailHistory(cid)}</div>
   </div>`, { center: false });
+  $("#emailbtn", d).onclick = () => openCompose(cid, roleId);
   $$("[data-close]", d).forEach((b) => (b.onclick = closeLayer));
-  $$("[data-t]", d).forEach((b) => (b.onclick = () => { $$("[data-t]", d).forEach((x) => x.classList.toggle("on", x === b)); ["screen", "profile", "cv"].forEach((k) => $("#t" + k, d).classList.toggle("hidden", k !== b.dataset.t)); }));
+  $$("[data-t]", d).forEach((b) => (b.onclick = () => { $$("[data-t]", d).forEach((x) => x.classList.toggle("on", x === b)); ["screen", "profile", "cv", "mail"].forEach((k) => $("#t" + k, d).classList.toggle("hidden", k !== b.dataset.t)); }));
   $("#ctx", d).onchange = (e) => openDrawer(cid, e.target.value || null);
   const oc = $("#opencv", d); if (oc) oc.onclick = () => openCv(c);
   const answers = { ...(p.answers || {}) };
@@ -1008,7 +1135,13 @@ function openDrawer(cid, roleId, tab = "screen") {
   $$("[data-d]", d).forEach((el) => (el.oninput = el.onchange = () => { dev[el.dataset.d] = el.value; drawReady(); }));
   $$("[data-yn]", d).forEach((g) => $$("button", g).forEach((b) => (b.onclick = () => { const k = g.dataset.yn; dev[k] = dev[k] === b.dataset.v ? "" : b.dataset.v; $$("button", g).forEach((x) => x.classList.toggle("on", dev[k] === x.dataset.v)); drawReady(); })));
   drawReady();
-  const st = $("#stage", d); if (st) st.onchange = async () => { try { await savePipe(cid, roleId, { stage: st.value }); toast("Moved to " + st.value); refresh(); } catch (e) { writeErr(e); } };
+  const st = $("#stage", d); if (st) st.onchange = async () => {
+    try {
+      const row = await savePipe(cid, roleId, { stage: st.value }); refresh();
+      if (NOTIFY_STAGES.includes(row.stage) && /^\S+@\S+\.\S+$/.test(c.email || "")) openCompose(cid, roleId, { afterStage: true });
+      else toast("Moved to " + st.value);
+    } catch (e) { writeErr(e); }
+  };
   $$("#stars button", d).forEach((b) => (b.onclick = async () => { const n = +b.dataset.r; rating = rating === n ? 0 : n; $$("#stars button", d).forEach((x) => x.classList.toggle("on", +x.dataset.r <= rating)); try { await savePipe(cid, roleId, { rating }); refresh(); } catch (e) { writeErr(e); } }));
   $("#save", d).onclick = async () => {
     const b = $("#save", d); b.disabled = true; b.textContent = "Saving…";
@@ -1035,7 +1168,10 @@ function openDrawer(cid, roleId, tab = "screen") {
 
 /* ---------- settings ---------- */
 function viewSettings(v) {
+  if (v.dataset.v === "config" && !S.ui.redrawSettings) return; // don't wipe half-typed settings on background refresh
+  S.ui.redrawSettings = false; v.dataset.v = "config";
   let qs = questionsFor(null).map((x) => ({ ...x }));
+  const brand = S.settings.email_branding || {};
   v.innerHTML = `${pageHead("Admin", "Settings", "Careers page details, talent pool screening and your team.")}
   <div class="stack" style="max-width:760px">
     <form class="card stack" id="site"><h3 style="font-size:17px">Careers page</h3>
@@ -1045,6 +1181,21 @@ function viewSettings(v) {
       <div class="qlist" id="pqs"></div>
       <div class="row"><input class="in" id="pnq" placeholder="Add a question" style="flex:1"><button class="btn sm" id="padd">${ICON.plus}Add</button></div>
       <div><button class="btn primary" id="psave">Save questions</button></div></div>
+    <form class="card stack" id="sender" novalidate><h3 style="font-size:17px">Email sender</h3>
+      <p class="muted small" style="margin:0">Candidate emails are sent from this address through Resend. Use an address on a domain verified in Resend (the same one DeviceCare uses works).</p>
+      <div class="grid2"><label class="f">Sender name<input class="in" name="from_name" value="${esc(brand.from_name || "HighCall VA Careers")}"></label>
+        <label class="f">Sender email<input class="in" name="from_email" type="email" placeholder="careers@highcallva.com" value="${esc(brand.from_email || "")}"></label>
+        <label class="f">Reply-to email<span class="hint">Where candidate replies go (optional)</span><input class="in" name="reply_to" type="email" placeholder="hr@highcallva.com" value="${esc(brand.reply_to || "")}"></label>
+        <label class="f">Footer text<span class="hint">Shown at the bottom of every email</span><input class="in" name="footer" value="${esc(brand.footer || "HighCall Virtual Assistants · Remote careers")}"></label></div>
+      <div class="qerr hidden" id="senderr"></div>
+      <div><button class="btn primary">Save sender</button></div></form>
+    <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:12px"><h3 style="font-size:17px">Email templates</h3><button type="button" class="btn sm primary" id="newtpl">${ICON.plus}New template</button></div>
+      <p class="muted small" style="margin:0 0 14px">Templates are suggested automatically when a candidate moves to the matching stage. Every email uses the HighCall VA layout with your logo.</p>
+      <div class="table-wrap">${S.mailTemplates.length ? `<table class="t"><thead><tr><th>Template</th><th>Stage</th><th>Subject</th><th></th></tr></thead><tbody>
+        ${S.mailTemplates.map((t) => `<tr><td><b style="color:var(--ink)">${esc(t.name)}</b></td><td>${t.purpose === "Other" ? `<span class="muted">Any</span>` : `<span class="badge">${esc(t.purpose)}</span>`}</td><td class="muted">${esc(t.subject)}</td>
+          <td style="text-align:right;white-space:nowrap"><button type="button" class="btn ghost sm" data-tedit="${esc(t.id)}">Edit</button><button type="button" class="btn ghost sm" data-ttest="${esc(t.id)}">Send me a test</button><button type="button" class="btn ghost sm danger" data-tdel="${esc(t.id)}" aria-label="Delete template">${ICON.trash}</button></td></tr>`).join("")}
+      </tbody></table>` : `<div class="empty" style="padding:24px"><p style="margin:0">No templates yet. Create one for each stage you email about.</p></div>`}</div>
+    </div>
     <div class="card"><h3 style="font-size:17px;margin-bottom:12px">Team</h3>
       <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Email</th><th>Access</th><th></th></tr></thead><tbody>
       ${S.team.map((t) => `<tr style="cursor:default"><td>${esc(t.name || "—")}</td><td>${esc(t.email)}</td><td>${S.isAdmin && t.user_id !== S.session.user.id ? `<select class="in" data-acc="${esc(t.user_id)}" style="padding:5px 8px;width:auto">${["admin", "recruiter", "member"].map((r) => `<option value="${r}" ${t.role === r ? "selected" : ""}>${r[0].toUpperCase() + r.slice(1)}</option>`).join("")}</select>` : esc(t.role[0].toUpperCase() + t.role.slice(1))}</td>
@@ -1066,18 +1217,76 @@ function viewSettings(v) {
   const add = () => { const t = $("#pnq", v).value.trim(); if (!t) return; qs.push({ id: uid(), text: t }); $("#pnq", v).value = ""; draw(); };
   $("#padd", v).onclick = add; $("#pnq", v).onkeydown = (e) => { if (e.key === "Enter") add(); };
   $("#psave", v).onclick = async () => { try { await saveQuestions(null, qs.filter((x) => x.text.trim())); toast("Questions saved"); } catch (e) { writeErr(e); } };
+  $("#sender", v).onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target, er = $("#senderr", v); er.classList.add("hidden");
+    const val = { from_name: f.from_name.value.trim().slice(0, 80) || "HighCall VA Careers", from_email: f.from_email.value.trim(), reply_to: f.reply_to.value.trim(), footer: f.footer.value.trim().slice(0, 300) };
+    const bad = (x) => x && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x);
+    if (!val.from_email || bad(val.from_email)) { er.textContent = "Enter a valid sender email."; er.classList.remove("hidden"); return; }
+    if (bad(val.reply_to)) { er.textContent = "The reply-to email isn’t valid."; er.classList.remove("hidden"); return; }
+    try { await q(sb.from("ats_settings").upsert({ key: "email_branding", value: val, is_public: false })); toast("Sender saved"); S.ui.redrawSettings = true; await reload(); } catch (ex) { writeErr(ex); }
+  };
+  $("#newtpl", v).onclick = () => openTemplateEditor();
+  $$("[data-tedit]", v).forEach((b) => (b.onclick = () => openTemplateEditor(S.mailTemplates.find((t) => t.id === b.dataset.tedit))));
+  $$("[data-ttest]", v).forEach((b) => (b.onclick = async () => {
+    const t = S.mailTemplates.find((x) => x.id === b.dataset.ttest); b.disabled = true; const label = b.textContent; b.textContent = "Sending…";
+    try { const r = await callEmailFn({ test: true, subject: t.subject, body: t.body }); toast(`Test sent to ${r.to}`); } catch (ex) { toast(ex.message); }
+    b.disabled = false; b.textContent = label;
+  }));
+  $$("[data-tdel]", v).forEach((b) => (b.onclick = async () => {
+    const t = S.mailTemplates.find((x) => x.id === b.dataset.tdel);
+    if (!confirm(`Delete the “${t.name}” template? Emails already sent are kept.`)) return;
+    try { await q(sb.from("ats_email_templates").delete().eq("id", t.id)); toast("Template deleted"); S.ui.redrawSettings = true; await reload(); } catch (ex) { writeErr(ex); }
+  }));
   $("#site", v).onsubmit = async (e) => {
     e.preventDefault();
-    try { await q(sb.from("ats_settings").upsert({ key: "careers_intro", value: e.target.intro.value.trim(), is_public: true })); toast("Careers page saved"); await reload(); } catch (ex) { writeErr(ex); }
+    try { await q(sb.from("ats_settings").upsert({ key: "careers_intro", value: e.target.intro.value.trim(), is_public: true })); toast("Careers page saved"); S.ui.redrawSettings = true; await reload(); } catch (ex) { writeErr(ex); }
   };
   const as = $("#addstaff", v);
   if (as) as.onsubmit = async (e) => {
     e.preventDefault(); const f = e.target;
-    try { await q(sb.rpc("ats_add_staff", { p_email: f.email.value.trim(), p_role: f.role.value, p_name: f.name.value.trim() || null })); toast("Added to team"); await reload(); }
+    try { await q(sb.rpc("ats_add_staff", { p_email: f.email.value.trim(), p_role: f.role.value, p_name: f.name.value.trim() || null })); toast("Added to team"); S.ui.redrawSettings = true; await reload(); }
     catch (ex) { toast(ex?.message || "Couldn’t add that person."); }
   };
-  $$("[data-acc]", v).forEach((s) => (s.onchange = async () => { try { await q(sb.from("ats_staff").update({ role: s.value }).eq("user_id", s.dataset.acc)); toast("Access updated"); await reload(); } catch (e) { writeErr(e); } }));
-  $$("[data-rm]", v).forEach((b) => (b.onclick = async () => { try { await q(sb.from("ats_staff").delete().eq("user_id", b.dataset.rm)); toast("Removed from team"); await reload(); } catch (e) { writeErr(e); } }));
+  $$("[data-acc]", v).forEach((s) => (s.onchange = async () => { try { await q(sb.from("ats_staff").update({ role: s.value }).eq("user_id", s.dataset.acc)); toast("Access updated"); S.ui.redrawSettings = true; await reload(); } catch (e) { writeErr(e); } }));
+  $$("[data-rm]", v).forEach((b) => (b.onclick = async () => { try { await q(sb.from("ats_staff").delete().eq("user_id", b.dataset.rm)); toast("Removed from team"); S.ui.redrawSettings = true; await reload(); } catch (e) { writeErr(e); } }));
+}
+
+function openTemplateEditor(t) {
+  const m = openLayer(`<form class="modal" novalidate>
+    <div class="dhead"><h2>${t ? "Edit template" : "New template"}</h2><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    <div class="grid2"><label class="f">Template name<input class="in" name="name" maxlength="120" value="${esc(t?.name || "")}" placeholder="Interview invitation"></label>
+      <label class="f">Suggest when moved to<select class="in" name="purpose">${TEMPLATE_PURPOSES.map((p) => `<option value="${p}" ${(t?.purpose || "Other") === p ? "selected" : ""}>${p === "Other" ? "Any stage (not suggested)" : p}</option>`).join("")}</select></label></div>
+    <label class="f">Subject<input class="in" name="subject" maxlength="200" value="${esc(t?.subject || "")}" placeholder="Interview invitation: {{role}} at HighCall VA"></label>
+    <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;color:var(--ink)">Message
+      <div class="row" style="gap:6px">${PLACEHOLDERS.map(([k, l]) => `<button type="button" class="chip" data-ph="${k}" title="${l}" style="cursor:pointer">${k}</button>`).join("")}</div>
+      <span class="hint" style="font-weight:400;color:var(--muted)">Click a field to insert it. Use [square brackets] for details the recruiter fills in before sending, like [add date and time].</span>
+      <textarea class="in" name="body" style="min-height:280px;font-size:14.5px;line-height:1.6">${esc(t?.body || "Hi {{first_name}},\n\n\n\nBest regards,\n{{recruiter_name}}\nHighCall VA Recruitment")}</textarea></div>
+    <div class="qerr hidden" id="terr"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><button type="button" class="btn ghost sm" id="ttest" style="margin-right:auto">${ICON.send}Send me a test</button><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary">${t ? "Save template" : "Create template"}</button></div>
+  </form>`);
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  let lastField = m.elements.body;
+  [m.elements.subject, m.elements.body].forEach((el) => el.addEventListener("focus", () => (lastField = el)));
+  $$("[data-ph]", m).forEach((b) => (b.onclick = () => {
+    const el = lastField, a = el.selectionStart ?? el.value.length, z = el.selectionEnd ?? a;
+    el.value = el.value.slice(0, a) + b.dataset.ph + el.value.slice(z); el.focus(); el.selectionStart = el.selectionEnd = a + b.dataset.ph.length; layerDirty = true;
+  }));
+  const read = () => ({ name: m.elements.name.value.trim(), purpose: m.elements.purpose.value, subject: m.elements.subject.value.trim(), body: m.elements.body.value.trim() });
+  const check = (x) => !x.name ? "Give the template a name." : !x.subject ? "Add a subject." : /[\r\n]/.test(x.subject) ? "Keep the subject on one line." : !x.body ? "Write the message." : "";
+  $("#ttest", m).onclick = async () => {
+    const x = read(), er = $("#terr", m), problem = check(x); if (problem) { er.textContent = problem; er.classList.remove("hidden"); return; }
+    const b = $("#ttest", m); b.disabled = true;
+    try { const r = await callEmailFn({ test: true, subject: x.subject, body: x.body }); toast(`Test sent to ${r.to}`); er.classList.add("hidden"); } catch (ex) { er.textContent = ex.message; er.classList.remove("hidden"); }
+    b.disabled = false;
+  };
+  m.onsubmit = async (e) => {
+    e.preventDefault(); const x = read(), er = $("#terr", m), problem = check(x);
+    if (problem) { er.textContent = problem; er.classList.remove("hidden"); return; }
+    try {
+      if (t) await q(sb.from("ats_email_templates").update(x).eq("id", t.id)); else await q(sb.from("ats_email_templates").insert(x));
+      layerDirty = false; closeLayer(); toast(t ? "Template saved" : "Template created"); S.ui.redrawSettings = true; await reload();
+    } catch (ex) { writeErr(ex); }
+  };
 }
 
 /* ---------- start ---------- */
