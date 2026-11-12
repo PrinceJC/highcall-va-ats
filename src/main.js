@@ -18,7 +18,7 @@ const S = {
   session: null, staff: null, recovery: false, isRecruiter: false, isAdmin: false, isMember: false,
   roles: [], cands: [], pipes: [], templates: [], settings: {}, team: [], mailTemplates: [], emails: [],
   ready: false, loadError: "",
-  ui: { route: null, poolQ: "", roleQ: "", stage: "all", roleTab: "active", sel: new Set(), f: {}, targetRole: "", openJob: null },
+  ui: { route: null, poolQ: "", roleQ: "", stage: "all", roleTab: "active", sel: new Set(), rsel: new Set(), f: {}, targetRole: "", openJob: null },
 };
 
 /* ---------- helpers ---------- */
@@ -130,7 +130,7 @@ function route() {
   else if (h !== "login") h = S.isRecruiter && !h ? "dashboard" : "careers";
   S.ui.route = h; render();
 }
-window.addEventListener("hashchange", () => { S.ui.sel.clear(); S.ui.roleQ = ""; S.ui.stage = "all"; route(); });
+window.addEventListener("hashchange", () => { S.ui.sel.clear(); S.ui.rsel.clear(); S.ui.roleQ = ""; S.ui.stage = "all"; route(); });
 const go = (h) => { if (location.hash === "#" + h) route(); else location.hash = h; };
 
 let mounted = null;
@@ -807,7 +807,7 @@ function viewRole(v, id) {
     v.dataset.v = "role-" + id;
     v.innerHTML = `<div id="rhead"></div><div class="pipeline" id="pstrip"></div>
       <div class="search"><input class="in" id="rq" type="search" placeholder="Search this role’s candidates" value="${esc(S.ui.roleQ)}" aria-label="Search candidates in this role"></div>
-      <div id="rqerr"></div><div class="panel table-wrap" id="rlist" style="margin-top:14px"></div>`;
+      <div id="rqerr"></div><div class="panel table-wrap" id="rlist" style="margin-top:14px"></div><div id="rbulk"></div>`;
     $("#rq", v).oninput = (e) => { S.ui.roleQ = e.target.value; drawRoleList(v, id); };
   }
   const es = roleEntries(id);
@@ -840,17 +840,33 @@ function drawRoleList(v, id) {
   const { err, list } = searchList(es, S.ui.roleQ, titlesFor);
   $("#rqerr", v).innerHTML = err ? `<div class="qerr">Search syntax: ${esc(err)}. Showing a simple keyword match instead.</div>` : "";
   list.sort((a, b) => ts(b.appliedAt) - ts(a.appliedAt));
-  $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th>Candidate</th><th>Stage</th><th>Email</th><th>Setup</th><th>Rating</th><th>Added</th></tr></thead><tbody>
+  for (const cid of [...S.ui.rsel]) if (!roleEntries(id).some((e) => e.cand.id === cid)) S.ui.rsel.delete(cid);
+  const allOn = list.length && list.every((e) => S.ui.rsel.has(e.cand.id));
+  $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th class="cb"><input type="checkbox" id="rall" ${allOn ? "checked" : ""} aria-label="Select all shown"></th><th>Candidate</th><th>Stage</th><th>Email</th><th>Setup</th><th>Rating</th><th>Added</th></tr></thead><tbody>
     ${list.map((e) => { const c = e.cand, rd = readiness(c, role), rt = e.pipe.rating || 0;
-      return `<tr data-c="${esc(c.id)}"><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span></td>
+      return `<tr data-c="${esc(c.id)}"><td class="cb"><input type="checkbox" data-rsel="${esc(c.id)}" ${S.ui.rsel.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}"></td><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span></td>
       <td><span class="badge ${e.stage === "Hired" ? "ok" : e.stage === "Rejected" ? "bad" : e.stage === "Withdrawn" ? "draft" : ""}">${e.stage}</span>${e.stage === "Hired" ? (c.va_person_id ? ` <span class="muted small">In DeviceCare</span>` : ` <span class="muted small">Not in DeviceCare yet</span>`) : ""}</td>
       <td>${emailBadge(e.pipe, { short: true })}</td>
       <td><span class="badge ${rd.cls}">${esc(rd.label)}</span></td>
       <td>${rt ? `<span style="color:#E2B007">${"★".repeat(rt)}</span><span style="color:var(--line)">${"★".repeat(5 - rt)}</span>` : `<span class="muted">Not rated</span>`}</td>
       <td class="muted">${ago(e.appliedAt)}<br><span class="small">${e.pipe.source === "applied" ? "Applied" : e.pipe.source === "sourced" ? "From pool" : "Added by recruiter"}</span></td></tr>`; }).join("")}</tbody></table>`
     : `<div class="empty">${roleEntries(id).length ? `<h3>No matches</h3><p>Try a different stage or search.</p>` : `<h3>No candidates yet</h3><p>${role.status === "public" ? "Applications from the careers page land here." : role.status === "internal" ? "Team members who apply internally land here." : "Publish the role so candidates can apply, or copy people in from the talent pool."}</p><button class="btn primary" data-fp>Copy from talent pool</button>`}</div>`;
-  $$("tr[data-c]", v).forEach((tr) => (tr.onclick = () => openDrawer(tr.dataset.c, id)));
+  $$("tr[data-c]", v).forEach((tr) => (tr.onclick = (ev) => { if (ev.target.closest("input")) return; openDrawer(tr.dataset.c, id); }));
+  $$("[data-rsel]", v).forEach((cb) => (cb.onchange = () => { cb.checked ? S.ui.rsel.add(cb.dataset.rsel) : S.ui.rsel.delete(cb.dataset.rsel); drawRoleBulk(v, id); }));
+  const ra = $("#rall", v); if (ra) ra.onchange = () => { list.forEach((e) => (ra.checked ? S.ui.rsel.add(e.cand.id) : S.ui.rsel.delete(e.cand.id))); drawRoleList(v, id); };
+  drawRoleBulk(v, id);
   const fp = $("[data-fp]", v); if (fp) fp.onclick = () => { S.ui.targetRole = id; go("pool"); };
+}
+
+function drawRoleBulk(v, roleId) {
+  const b = $("#rbulk", v); if (!b) return;
+  const n = S.ui.rsel.size;
+  if (!n) { b.innerHTML = ""; return; }
+  b.innerHTML = `<div class="bulk"><b>${n} selected</b>
+    <button class="btn go sm" id="rbulkmail">${ICON.send}Email selected</button>
+    <button class="btn ghost sm" id="runsel" style="color:inherit">Clear</button></div>`;
+  $("#runsel", b).onclick = () => { S.ui.rsel.clear(); drawRoleList(v, roleId); };
+  $("#rbulkmail", b).onclick = () => openBulkEmail([...S.ui.rsel], roleId);
 }
 
 /* ---------- talent pool ---------- */
@@ -931,10 +947,12 @@ function drawBulk(v) {
   b.innerHTML = `<div class="bulk"><b>${n} selected</b>
     <select id="tgt" aria-label="Role to copy into">${roles.length ? roles.map((r) => `<option value="${esc(r.id)}" ${S.ui.targetRole === r.id ? "selected" : ""}>${esc(r.title)} (${STATUS_LABEL[r.status]})</option>`).join("") : `<option value="">Create a role first</option>`}</select>
     <button class="btn go sm" id="copy" ${roles.length ? "" : "disabled"}>Copy to role</button>
+    <button class="btn sm" id="bulkmail" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">${ICON.send}Email selected</button>
     <button class="btn ghost sm" id="unsel" style="color:inherit">Clear</button>
     <button class="btn sm" id="bulkdel" style="margin-left:auto;background:transparent;color:#FFB4AA;border-color:#5A3A38">${ICON.trash}Delete</button></div>`;
   $("#unsel", b).onclick = () => { S.ui.sel.clear(); drawPool(v); };
   $("#bulkdel", b).onclick = () => confirmDelete([...S.ui.sel]);
+  $("#bulkmail", b).onclick = () => openBulkEmail([...S.ui.sel], null);
   $("#copy", b).onclick = async () => {
     const roleId = $("#tgt", b).value; if (!roleId) return; $("#copy", b).disabled = true;
     try { const { added, skipped } = await copyToRole([...S.ui.sel], roleId); S.ui.sel.clear(); toast(`Copied ${added} to ${roleTitle(roleId)}${skipped ? `, ${skipped} already there` : ""}`); await reload(); }
@@ -1138,6 +1156,101 @@ function openBulkUpload(roleId) {
   draw();
 }
 
+
+/* ---------- bulk email (outreach) ---------- */
+const BULK_EMAIL_MAX = 100;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function openBulkEmail(candIds, roleId) {
+  const all = candIds.map(candById).filter(Boolean);
+  const valid = (c) => /^\S+@\S+\.\S+$/.test(c.email || "");
+  let recips = all.filter(valid).slice(0, BULK_EMAIL_MAX).map((c) => ({ c, pipe: roleId ? pipeFor(c.id, roleId) : null, state: "queued", note: "" }));
+  const noEmail = all.filter((c) => !valid(c));
+  const over = Math.max(0, all.filter(valid).length - BULK_EMAIL_MAX);
+  const tpls = [...S.mailTemplates].sort((a, b) => (a.purpose === "Outreach" ? -1 : 0) - (b.purpose === "Outreach" ? -1 : 0));
+  const def = tpls.find((t) => t.purpose === "Outreach") || null;
+  let running = false, finished = false;
+  const m = openLayer(`<form class="modal bulk-modal" novalidate>
+    <div class="dhead"><div><h2>Email ${recips.length} candidate${recips.length === 1 ? "" : "s"}</h2><div class="muted small" style="margin-top:4px">${roleId ? `${esc(roleTitle(roleId))} · ` : "Talent pool · "}Each person gets their own email, personalised with their name.</div></div>
+      <button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    ${noEmail.length ? `<div class="note warn">${noEmail.length} selected candidate${noEmail.length === 1 ? " has" : "s have"} no valid email and will be skipped: ${noEmail.slice(0, 5).map((c) => esc(c.name)).join(", ")}${noEmail.length > 5 ? "…" : ""}</div>` : ""}
+    ${over ? `<div class="note warn">Only ${BULK_EMAIL_MAX} emails can be sent at once. The first ${BULK_EMAIL_MAX} selected will be emailed.</div>` : ""}
+    <div id="bmcompose">
+      <label class="f">Template<select class="in" name="tpl" data-nodirty><option value="">Blank email</option>${tpls.map((t) => `<option value="${esc(t.id)}" ${def?.id === t.id ? "selected" : ""}>${esc(t.name)}${t.purpose !== "Other" ? ` (${esc(t.purpose)})` : ""}</option>`).join("")}</select></label>
+      <label class="f" style="margin-top:14px">Subject<input class="in" name="subject" maxlength="200"></label>
+      <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;color:var(--ink);margin-top:14px">Message
+        <div class="row" style="gap:6px">${PLACEHOLDERS.map(([k, l]) => `<button type="button" class="chip" data-ph="${k}" title="${l}" style="cursor:pointer">${k}</button>`).join("")}</div>
+        <span class="hint" style="font-weight:400;color:var(--muted)">Fields like {{first_name}} are filled in for each candidate. Replace anything in [square brackets] before sending.</span>
+        <textarea class="in" name="body" style="min-height:220px;font-size:14.5px;line-height:1.6"></textarea></div>
+      <div class="bm-preview"><div class="muted small" style="margin-bottom:6px">Preview for <b id="bmwho"></b></div><div class="bm-subj" id="bmsubj"></div><div class="bm-body" id="bmbody"></div></div>
+    </div>
+    <div id="bmlist"></div>
+    <div class="qerr hidden" id="bmerr" role="alert"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><span class="muted small" id="bmsum" style="margin-right:auto"></span><button type="button" class="btn" data-close id="bmcancel">Cancel</button><button type="submit" class="btn primary" id="bmgo" ${recips.length ? "" : "disabled"}>${ICON.send}Send ${recips.length} email${recips.length === 1 ? "" : "s"}</button></div>
+  </form>`);
+  const el = (n) => m.elements[n];
+  $$("[data-close]", m).forEach((b) => (b.onclick = () => { if (running) return; closeLayer(); if (finished) reload(); }));
+  const apply = (id) => { const t = tpls.find((x) => x.id === id); el("subject").value = t ? t.subject : ""; el("body").value = t ? t.body : "Hi {{first_name}},\n\n\n\nBest regards,\n{{recruiter_name}}\nHighCall VA Recruitment"; preview(); };
+  const preview = () => {
+    const first = recips[0]; if (!first) return;
+    const rid = roleId || null;
+    $("#bmwho", m).textContent = first.c.name;
+    $("#bmsubj", m).textContent = fillVars(el("subject").value, first.c, rid);
+    $("#bmbody", m).textContent = fillVars(el("body").value, first.c, rid);
+  };
+  el("tpl").onchange = () => { if (layerDirty && !confirm("Replace your edits with this template?")) return; apply(el("tpl").value); layerDirty = false; };
+  el("subject").oninput = preview; el("body").oninput = preview;
+  let lastField = el("body");
+  [el("subject"), el("body")].forEach((x) => x.addEventListener("focus", () => (lastField = x)));
+  $$("[data-ph]", m).forEach((b) => (b.onclick = () => { const x = lastField, a = x.selectionStart ?? x.value.length, z = x.selectionEnd ?? a; x.value = x.value.slice(0, a) + b.dataset.ph + x.value.slice(z); x.focus(); x.selectionStart = x.selectionEnd = a + b.dataset.ph.length; layerDirty = true; preview(); }));
+  apply(def?.id || ""); layerDirty = false;
+  const drawList = () => {
+    $("#bmlist", m).innerHTML = (running || finished) ? `<div class="table-wrap bulk-table"><table class="t"><thead><tr><th>Candidate</th><th>Email</th><th>Status</th></tr></thead><tbody>
+      ${recips.map((r) => `<tr class="${r.state === "failed" || r.state === "skipped" ? "skip" : ""}"><td><b style="color:var(--ink)">${esc(r.c.name)}</b></td><td class="small">${esc(r.c.email)}</td>
+        <td>${{ queued: `<span class="badge">Waiting</span>`, sending: `<span class="badge">Sending…</span>`, sent: `<span class="badge ok">Sent</span>`, failed: `<span class="badge bad">Failed</span>`, skipped: `<span class="badge bad">Not sent</span>` }[r.state]}${r.note ? `<div class="small" style="color:var(--bad);margin-top:4px">${esc(r.note)}</div>` : ""}</td></tr>`).join("")}
+    </tbody></table></div>` : "";
+    const sent = recips.filter((r) => r.state === "sent").length, bad = recips.filter((r) => r.state === "failed" || r.state === "skipped").length;
+    $("#bmsum", m).textContent = running ? `Sending ${sent + bad + 1} of ${recips.length}…` : finished ? `${sent} sent${bad ? ` · ${bad} not sent` : ""}` : "";
+  };
+  m.onsubmit = async (e) => {
+    e.preventDefault(); if (running) return;
+    if (finished) { closeLayer(); reload(); return; }
+    const err = $("#bmerr", m); err.classList.add("hidden");
+    const subject = el("subject").value.trim(), body = el("body").value.trim();
+    const fail = (t) => { err.textContent = t; err.classList.remove("hidden"); };
+    if (!subject) return fail("Add a subject.");
+    if (/[\r\n]/.test(subject)) return fail("Keep the subject on one line.");
+    if (!body) return fail("Write the message.");
+    const open = (subject + "\n" + body).match(/\[[^\]\n]{2,80}\]/);
+    if (open && !confirm(`The message still contains “${open[0]}”. Send anyway?`)) return;
+    if (!confirm(`Send this email to ${recips.length} candidate${recips.length === 1 ? "" : "s"}?`)) return;
+    running = true; layerDirty = false;
+    $("#bmcompose", m).classList.add("hidden"); $("#bmgo", m).disabled = true; $("#bmcancel", m).classList.add("hidden");
+    drawList();
+    const templateId = el("tpl").value || null;
+    for (let i = 0; i < recips.length; i++) {
+      const r = recips[i]; r.state = "sending"; drawList();
+      try {
+        await callEmailFn({ candidate_id: r.c.id, pipeline_id: r.pipe?.id || null, template_id: templateId, subject, body });
+        r.state = "sent";
+      } catch (ex) {
+        r.state = "failed"; r.note = ex.message;
+        // Problems that would fail every email: stop instead of repeating the same error.
+        if (/sender email|RESEND_API_KEY|isn’t deployed|Recruiter access|sign in again|origin is not allowed|429|daily|quota|limit/i.test(ex.message)) {
+          recips.slice(i + 1).forEach((x) => { x.state = "skipped"; x.note = "Not sent: " + (/429|daily|quota|limit/i.test(ex.message) ? "email sending limit reached. Try again later." : "fix the problem above, then try again."); });
+          drawList(); break;
+        }
+      }
+      drawList();
+      if (i < recips.length - 1) await sleep(600); // stay within the email provider's rate limit
+    }
+    running = false; finished = true;
+    const btn = $("#bmgo", m); btn.disabled = false; btn.innerHTML = "Done";
+    drawList();
+    const sent = recips.filter((r) => r.state === "sent").length;
+    toast(`${sent} email${sent === 1 ? "" : "s"} sent`);
+  };
+}
+
 /* ---------- delete candidates ---------- */
 function confirmDelete(ids, after) {
   const list = ids.map(candById).filter(Boolean); if (!list.length) return;
@@ -1167,7 +1280,7 @@ function confirmDelete(ids, after) {
 /* ---------- candidate emails ---------- */
 // Moving someone into one of these stages means they should hear from us.
 const NOTIFY_STAGES = ["Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected"];
-const TEMPLATE_PURPOSES = ["Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Other"];
+const TEMPLATE_PURPOSES = ["Outreach", "Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Other"];
 const PLACEHOLDERS = [["{{first_name}}", "Candidate’s first name"], ["{{full_name}}", "Candidate’s full name"], ["{{role}}", "Role title"], ["{{recruiter_name}}", "Your name"], ["{{recruiter_email}}", "Your email"]];
 /** null = no email expected for this stage; {needed:true} = red; {ok:true, at} = green */
 function emailState(pipe) {
@@ -1492,7 +1605,7 @@ function openTemplateEditor(t) {
   const m = openLayer(`<form class="modal" novalidate>
     <div class="dhead"><h2>${t ? "Edit template" : "New template"}</h2><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
     <div class="grid2"><label class="f">Template name<input class="in" name="name" maxlength="120" value="${esc(t?.name || "")}" placeholder="Interview invitation"></label>
-      <label class="f">Suggest when moved to<select class="in" name="purpose">${TEMPLATE_PURPOSES.map((p) => `<option value="${p}" ${(t?.purpose || "Other") === p ? "selected" : ""}>${p === "Other" ? "Any stage (not suggested)" : p}</option>`).join("")}</select></label></div>
+      <label class="f">Suggest when moved to<select class="in" name="purpose">${TEMPLATE_PURPOSES.map((p) => `<option value="${p}" ${(t?.purpose || "Other") === p ? "selected" : ""}>${p === "Other" ? "Any stage (not suggested)" : p === "Outreach" ? "Outreach (bulk emails)" : p}</option>`).join("")}</select></label></div>
     <label class="f">Subject<input class="in" name="subject" maxlength="200" value="${esc(t?.subject || "")}" placeholder="Interview invitation: {{role}} at HighCall VA"></label>
     <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;color:var(--ink)">Message
       <div class="row" style="gap:6px">${PLACEHOLDERS.map(([k, l]) => `<button type="button" class="chip" data-ph="${k}" title="${l}" style="cursor:pointer">${k}</button>`).join("")}</div>
