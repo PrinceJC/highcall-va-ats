@@ -308,7 +308,7 @@ body.site-careers{background:var(--web-bg)}
 .lp-pill.beige{background:var(--web-beige);color:var(--web-ink)}
 .lp-pill:hover{filter:brightness(.96)}
 .lp-pill svg{width:16px;height:16px}
-.lp-stage{position:relative;overflow:hidden}
+.lp-stage{position:relative;overflow:hidden;overflow:clip}
 .lp-swoosh{position:absolute;left:0;top:0;width:100%;height:1200px;pointer-events:none;z-index:0}
 .lp-stage > section{position:relative;z-index:1}
 .lp-hero{text-align:center;padding:56px 0 64px}
@@ -375,6 +375,44 @@ body.site-careers{background:var(--web-bg)}
   .lp-stat{min-width:0;flex:1 1 100%;max-width:none}
   .lp-cta{padding:28px 22px}.lp-cta .lp-pill{margin-left:0;width:100%}
 }
+/* ---------- careers page sized like highcallva.com (measured at 1917px; scales down smoothly) ---------- */
+.lp-wrap{width:min(1640px,100% - 64px)}
+.lp-bar{padding-top:clamp(14px,1.6vw,30px)}
+.lp-navpill{min-height:clamp(70px,5.6vw,107px);padding:0 clamp(12px,1.15vw,22px) 0 clamp(20px,1.8vw,34px);gap:clamp(12px,1.2vw,24px)}
+.lp-brand{gap:clamp(8px,.55vw,12px)}
+.lp-brand img{width:clamp(54px,4.6vw,88px)}
+.lp-word{gap:clamp(5px,.45vw,9px)}
+.lp-word b{font-size:clamp(23px,2.1vw,40px);font-weight:700;letter-spacing:-.02em}
+.lp-word em{font-size:clamp(16px,1.4vw,27px);font-weight:700}
+.lp-nav{gap:clamp(16px,1.4vw,26px)}
+.lp-navlink{font-size:clamp(15px,1.16vw,22px);font-weight:400;color:#1F3E3A}
+.lp-pill{min-height:clamp(44px,2.85vw,54px);padding:0 clamp(20px,1.6vw,30px);font-size:clamp(15px,1.05vw,20px);font-weight:500}
+.lp-hero{padding:clamp(52px,6.8vw,130px) 0 clamp(48px,4.4vw,84px)}
+.lp-hero h1{font-size:clamp(34px,3.68vw,70px);font-weight:500;letter-spacing:-.012em;line-height:1.15;max-width:none;color:#0E4A43}
+.lp-hero p#lpintro{font-size:clamp(16px,1.16vw,22px);line-height:1.55;color:#1F4B46;max-width:1120px;margin:clamp(18px,2vw,38px) auto clamp(28px,3.4vw,64px)}
+.lp-search{max-width:clamp(560px,40vw,760px);padding:clamp(6px,.4vw,8px) clamp(6px,.4vw,8px) clamp(6px,.4vw,8px) clamp(18px,1.4vw,28px)}
+.lp-search input{font-size:clamp(15px,1.05vw,20px)}
+.lp-search select{font-size:clamp(14px,.95vw,18px)}
+.lp-search .lp-pill{padding:0 clamp(22px,1.6vw,32px)}
+.lp-stats{gap:clamp(14px,1.1vw,22px);margin-top:clamp(28px,2.6vw,50px)}
+.lp-stat{min-width:clamp(170px,11.5vw,220px);max-width:clamp(230px,14vw,270px);padding:clamp(16px,1.3vw,24px);border-radius:clamp(18px,1.35vw,26px)}
+.lp-stat b{font-size:clamp(32px,2.9vw,56px);font-weight:400;letter-spacing:-.02em}
+.lp-stat span{font-size:clamp(13px,1.02vw,19px);margin-top:clamp(8px,1vw,18px)}
+.lp-section{padding:clamp(48px,4.2vw,80px) 0}
+.lp-kicker{font-size:clamp(12px,.75vw,14px)}
+.lp-h2{font-size:clamp(28px,2.5vw,48px);font-weight:500;letter-spacing:-.015em;color:#0E4A43}
+.lp-grid{gap:clamp(18px,1.3vw,26px)}
+.lp-job{padding:clamp(22px,1.6vw,32px);border-radius:clamp(22px,1.5vw,30px)}
+.lp-job h3{font-size:clamp(19px,1.3vw,25px);font-weight:600}
+.lp-job p{font-size:clamp(14.5px,.9vw,17px)}
+.lp-job .lp-pill{min-height:clamp(40px,2.4vw,46px);padding:0 clamp(18px,1.2vw,24px);font-size:clamp(14px,.9vw,17px)}
+.lp-cta{padding:clamp(28px,2.4vw,48px) clamp(24px,2.6vw,52px);border-radius:clamp(24px,1.7vw,34px)}
+.lp-cta h3{font-size:clamp(24px,1.8vw,34px);font-weight:500}
+.lp-cta p{font-size:clamp(15px,.95vw,18px)}
+/* swoosh scales with the page width, like the website's: very thick, sweeping from the top-right corner */
+.lp-swoosh{height:auto;aspect-ratio:1440/1200}
+@media (max-width:980px){.lp-nav .lp-navlink[href^="https"]{display:none}}
+@media (max-width:680px){.lp-wrap{width:calc(100% - 28px)}.lp-nav #toroles,.lp-nav .lp-pill{display:none}.lp-hero h1{font-size:32px}.lp-stat{min-width:0;flex:1 1 100%;max-width:none}}
 .previewbar{background:var(--side-2);color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:center;font-size:14px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
 .previewbar .btn{padding:5px 12px;font-size:13px;box-shadow:none}
 
@@ -474,3 +512,6 @@ body.site-careers{background:var(--web-bg)}
 .auth .formcard{position:relative;z-index:1;width:min(440px,100%);background:#fff;border-radius:26px;padding:38px 36px 32px;box-shadow:0 18px 46px rgba(1,61,53,.10)}
 @media (max-width:860px){.auth-swoosh{display:none}}
 
+
+/* nav bar sits over the swoosh, like highcallva.com */
+.lp-stage > .lp-bar{position:sticky;z-index:10;background:none}

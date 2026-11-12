@@ -318,19 +318,19 @@ function viewCareers(v) {
   if (v.dataset.v !== "careers") {
     v.dataset.v = "careers";
     v.innerHTML = `
+
+    <div class="lp-stage">
+    <svg class="lp-swoosh" viewBox="0 0 1440 1200" preserveAspectRatio="xMidYMin meet" aria-hidden="true">
+      <defs><linearGradient id="swmain" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FE3EC"/><stop offset=".45" stop-color="#83DEAD"/><stop offset="1" stop-color="#A5D334"/></linearGradient></defs>
+      <path d="M -90 1080 C 30 900, 140 790, 290 782 C 450 774, 540 900, 730 925 C 940 952, 1060 800, 1160 640 C 1260 480, 1400 250, 1470 -30" fill="none" stroke="url(#swmain)" stroke-width="58" stroke-linecap="round"/>
+    </svg>
     <header class="lp-bar"><div class="lp-wrap"><div class="lp-navpill">
       <a class="lp-brand" href="#careers" aria-label="HighCall Careers home"><img src="${LOGO}" alt=""><span class="lp-word"><b>HighCall</b><em>Careers</em></span></a>
       <nav class="lp-nav"><button type="button" class="lp-navlink" id="toroles">Open roles</button><a class="lp-navlink" href="https://highcallva.com" rel="noopener">About HighCall VA</a><span id="authbtn"></span>
         <button type="button" class="lp-pill lime" data-apply="">Join the talent pool</button></nav>
     </div></div></header>
-    <div class="lp-stage">
-    <svg class="lp-swoosh" viewBox="0 0 1440 1200" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
-      <defs><linearGradient id="swmain" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6FE3EC"/><stop offset=".45" stop-color="#83DEAD"/><stop offset="1" stop-color="#A5D334"/></linearGradient></defs>
-      <path d="M -90 1080 C 30 900, 140 790, 290 782 C 450 774, 540 900, 730 925 C 940 952, 1090 820, 1210 580 C 1290 410, 1360 180, 1560 -60" fill="none" stroke="url(#swmain)" stroke-width="58" stroke-linecap="round"/>
-    </svg>
     <section class="lp-hero">
       <div class="lp-wrap lp-hero-inner">
-        <p class="lp-kicker">Careers at HighCall VA</p>
         <h1>Build your remote career with HighCall VA</h1>
         <p id="lpintro"></p>
         <form class="lp-search" id="lpsearch" role="search">
