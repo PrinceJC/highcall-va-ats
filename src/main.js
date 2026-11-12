@@ -146,13 +146,16 @@ function shell(r) {
   const role = r.startsWith("role-") ? roleById(r.slice(5)) : null;
   const crumb = role ? `<a href="#roles" style="color:inherit;text-decoration:none">Roles</a><i>/</i><b>${esc(role.title)}</b>` : `<b>${CRUMB[cur] || ""}</b>`;
   const navLink = ([h, l, i]) => `<a href="#${h}" class="${cur === h ? "on" : ""}">${i}${l}<span class="count" data-count="${h}"></span></a>`;
+  const who = S.staff?.name || S.session?.user?.email || "";
+  const initials = (who.includes("@") ? who.split("@")[0] : who).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "HC";
   return `<div class="app" id="app"><aside class="side" id="side">
       <div class="brand"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
-      <div class="navlabel">Workspace</div>
-      <nav class="nav">${nav.map(navLink).join("")}</nav>
-      <div class="navlabel" style="margin-top:26px">Admin</div>
-      <nav class="nav">${navLink(["config", "Settings", ICON.settings])}<a href="#" id="signout">${ICON.logout}Sign out</a></nav>
-      <div class="tagline">${ICON.heart}The right people. The right setup.</div>
+      <nav class="nav side-main" aria-label="Main navigation">${nav.map(navLink).join("")}</nav>
+      <div class="side-bottom">
+        <nav class="nav" aria-label="Settings">${navLink(["config", "Settings", ICON.settings])}</nav>
+        <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong>${esc(S.staff?.name || "HighCall VA Recruiting")}</strong><small>${S.isAdmin ? "Admin" : "Recruiter"} workspace</small></div></div>
+        <a href="#" id="signout" class="side-signout">${ICON.logout}Sign out</a>
+      </div>
     </aside>
     <div class="main">
       <header class="topbar"><button class="menubtn" id="menubtn" aria-label="Open menu">${ICON.menu}</button>
@@ -192,10 +195,32 @@ function update(r) {
 
 /* ---------- login ---------- */
 function authOpen() {
-  return `<div class="auth"><div class="art"><img class="loop" src="${LOGO}" alt="">
-      <div class="brand" style="padding:0"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
-      <h2>The right people. Ready to work.</h2>
-      <p>Roles, candidates, screening and hiring for the HighCall VA team, in one place.</p></div>
+  const check = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+  const card = (cls, name, stage, tone) => `<div class="ccard ${cls}"><span class="cav">${name}</span><span class="clines"><i></i><i class="short"></i></span><span class="cstage ${tone}">${stage}</span></div>`;
+  return `<div class="auth"><div class="art">
+      <div class="art-bg" aria-hidden="true">
+        <svg class="rings" viewBox="0 0 800 900" preserveAspectRatio="xMaxYMid slice">
+          <circle cx="760" cy="560" r="250"/><circle cx="760" cy="560" r="370"/><circle cx="760" cy="560" r="490"/>
+          <path class="journey" d="M 402 470 A 370 370 0 0 1 760 190"/>
+          <path class="journey" d="M 402 650 A 370 370 0 0 0 600 894"/>
+        </svg>
+        ${card("c1", "MS", "Applied", "")}
+        ${card("c2", "JD", "Interview", "mid")}
+        ${card("c3", "AR", "Hired ✓", "hired")}
+      </div>
+      <div class="brand"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
+      <div class="art-copy">
+        <p class="art-eyebrow">HCVA recruiting workspace</p>
+        <h2>The right people.<br>Ready to work.</h2>
+        <p class="art-lead">Find, screen and hire virtual assistants who are ready for every client and every workday.</p>
+        <ul class="art-points">
+          <li>${check}One home for every role and candidate</li>
+          <li>${check}Screening with device and internet checks</li>
+          <li>${check}Clear progress from applied to hired</li>
+        </ul>
+      </div>
+      <small class="art-foot">Hire with care. Grow with your people.</small>
+    </div>
     <div class="formside"><div class="formcard">`;
 }
 const authClose = `</div></div></div>`;
