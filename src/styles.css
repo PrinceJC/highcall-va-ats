@@ -446,3 +446,27 @@ body.site-careers{background:var(--web-bg)}
 .bulk-table td.bfile{max-width:170px}
 .bulk-table td.bfile span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-top:8px;color:var(--ink)}
 @media (max-width:680px){.lp-swoosh{opacity:.35}}
+
+/* ---------- HighCall VA lime (#A5D334) for buttons and active states, matching highcallva.com ---------- */
+:root{--lime:#A5D334;--lime-hover:#97C42B;--lime-ink:#013D35}
+.btn.primary,.btn.go{background:var(--lime);border-color:var(--lime);color:var(--lime-ink)}
+.btn.primary:hover,.btn.go:hover{background:var(--lime-hover);border-color:var(--lime-hover);color:var(--lime-ink)}
+.btn.primary:disabled,.btn.go:disabled{background:var(--lime);border-color:var(--lime);color:var(--lime-ink)}
+.btn.danger.primary,.btn.danger.primary:hover{background:var(--bad);border-color:var(--bad);color:#fff}
+.nav a.on{box-shadow:inset 3px 0 var(--lime)}
+.nav a.on svg,.nav a.on .count{color:var(--lime)}
+.tabs button.on::after,.pipeline button.on::after{background:var(--lime)}
+.yn button.on{background:var(--lime);color:var(--lime-ink)}
+.toast{border-left-color:var(--lime)}
+.avatar{border-color:var(--lime)}
+.chk input,.filters input[type=checkbox]{accent-color:#7FA82A}
+.in:focus{outline-color:#8DB82C}
+.lp-search .lp-pill,.lp-pill.lime{background:var(--lime)}
+/* sign-in page */
+.art-eyebrow{color:var(--lime)}
+.art-points svg{color:var(--lime)}
+.art-bg .rings .journey{stroke:rgba(165,211,52,.32)}
+.auth .formside{position:relative;overflow:hidden}
+.auth .formcard{position:relative;z-index:1}
+.auth-swoosh{position:absolute;right:0;bottom:28px;width:min(560px,78%);height:auto;pointer-events:none;z-index:0}
+@media (max-width:860px){.auth-swoosh{width:70%;bottom:10px;opacity:.6}}

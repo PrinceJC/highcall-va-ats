@@ -242,7 +242,12 @@ function authOpen() {
       </div>
       <small class="art-foot">Hire with care. Grow with your people.</small>
     </div>
-    <div class="formside"><div class="formcard">`;
+    <div class="formside">
+      <svg class="auth-swoosh" viewBox="0 0 600 220" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+        <defs><linearGradient id="authsw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A5D334"/><stop offset=".55" stop-color="#83DEAD"/><stop offset="1" stop-color="#6FE3EC"/></linearGradient></defs>
+        <path d="M 10 196 C 120 196, 200 186, 262 160 C 300 142, 318 128, 348 142 C 388 162, 432 158, 474 116 C 522 68, 556 40, 596 14" fill="none" stroke="url(#authsw)" stroke-width="12" stroke-linecap="round"/>
+      </svg>
+      <div class="formcard">`;
 }
 const authClose = `</div></div></div>`;
 function viewLogin(v, mode = "signin") {
