@@ -468,5 +468,7 @@ body.site-careers{background:var(--web-bg)}
 .art-bg .rings .journey{stroke:rgba(165,211,52,.32)}
 .auth .formside{position:relative;overflow:hidden}
 .auth .formcard{position:relative;z-index:1}
-.auth-swoosh{position:absolute;right:0;bottom:28px;width:min(560px,78%);height:auto;pointer-events:none;z-index:0}
-@media (max-width:860px){.auth-swoosh{width:70%;bottom:10px;opacity:.6}}
+/* swoosh runs the full width of the sign-in side; both rounded ends stay visible */
+.auth-swoosh{position:absolute;left:24px;right:24px;bottom:24px;width:calc(100% - 48px);height:clamp(80px,19vh,200px);pointer-events:none;z-index:0;overflow:visible}
+@media (max-width:860px){.auth-swoosh{display:none}}
+
