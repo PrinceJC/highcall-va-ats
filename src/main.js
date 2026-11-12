@@ -153,7 +153,7 @@ function shell(r) {
       <nav class="nav side-main" aria-label="Main navigation">${nav.map(navLink).join("")}</nav>
       <div class="side-bottom">
         <nav class="nav" aria-label="Settings">${navLink(["config", "Settings", ICON.settings])}</nav>
-        <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong>${esc(S.staff?.name || "HighCall VA Recruiting")}</strong><small>${S.isAdmin ? "Admin" : "Recruiter"} workspace</small></div></div>
+        <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong title="${esc(S.staff?.email || S.session?.user?.email || "")}">${esc(S.staff?.name || S.staff?.email || S.session?.user?.email || "HighCall VA Recruiting")}</strong><small>${S.isAdmin ? "Admin" : "Recruiter"} workspace</small></div></div>
         <a href="#" id="signout" class="side-signout">${ICON.logout}Sign out</a>
       </div>
     </aside>
