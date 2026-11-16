@@ -44,6 +44,7 @@ function writeErr(e) {
   else toast(e?.message ? "Couldn’t save: " + e.message : "That didn’t save. Check your connection and try again.");
 }
 const ICON = {
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   setup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>',
   dash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
@@ -1251,6 +1252,60 @@ function openBulkEmail(candIds, roleId) {
   };
 }
 
+
+/* ---------- edit candidate details ---------- */
+function openEditCand(cid, after) {
+  const c = candById(cid); if (!c) return;
+  const m = openLayer(`<form class="modal" novalidate>
+    <div class="dhead"><div><h2>Edit candidate details</h2><div class="muted small" style="margin-top:4px">${esc(c.name)}</div></div><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    ${candFields(c)}
+    <div id="emailclash"></div>
+    ${c.va_person_id ? `<div class="note">This person is also in DeviceCare. Changes here don’t update their DeviceCare record.</div>` : ""}
+    <div class="qerr hidden" id="eerr" role="alert"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit" id="esave">Save changes</button></div>
+  </form>`);
+  // the CV box replaces the current CV (the old one is kept as a previous version)
+  const dropSpan = $("#drop span", m); if (dropSpan) dropSpan.textContent = c.cv_path ? `Replace CV: drop a new PDF here or click to choose (current: ${c.cv_name || "CV"})` : "Add a CV: drop a PDF here or click to choose";
+  bindDrop(m);
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  const clashWith = () => { const e = m.elements.email.value.trim().toLowerCase(); if (!e) return null; const o = findByEmail(e); return o && o.id !== c.id ? o : null; };
+  const showClash = () => {
+    const o = clashWith();
+    $("#emailclash", m).innerHTML = o ? `<div class="note warn"><b>${esc(o.name)}</b> already uses this email. Each candidate needs their own email. <button type="button" class="link" id="viewclash">View their profile</button></div>` : "";
+    const vc = $("#viewclash", m); if (vc) vc.onclick = () => { closeLayer(); openDrawer(o.id, null, "profile"); };
+  };
+  m.elements.email.addEventListener("input", showClash); m.elements.email.addEventListener("blur", showClash);
+  m.onsubmit = async (e) => {
+    e.preventDefault(); const err = $("#eerr", m); err.classList.add("hidden");
+    const fail = (t) => { err.textContent = t; err.classList.remove("hidden"); };
+    const vals = readForm(m);
+    if (!vals.name) return fail("Full name is required.");
+    if (vals.email) vals.email = vals.email.toLowerCase();
+    if (vals.email && !/^\S+@\S+\.\S+$/.test(vals.email)) return fail("Enter a valid email, or leave it empty.");
+    if (clashWith()) { showClash(); return fail("That email belongs to another candidate."); }
+    if (m.elements.link.value.trim() && !vals.link) return fail("Enter a full link starting with https://, or leave it empty.");
+    if (!vals.email && c.email && !confirm("Remove this candidate’s email? You won’t be able to email them until one is added.")) return;
+    const btn = $("#esave", m); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const patch = { ...vals, name: vals.name.slice(0, 200) }; // empty fields clear the old value
+      const f = m.elements.cv?.files?.[0];
+      if (f) {
+        const cv = await uploadCv(f, "recruiter");
+        Object.assign(patch, cv);
+        if (c.cv_path && c.cv_path !== cv.cv_path) patch.cv_history = [{ path: c.cv_path, name: c.cv_name, replaced_at: nowIso() }, ...(c.cv_history || [])].slice(0, 10);
+      }
+      const row = await q(sb.from("ats_candidates").update(patch).eq("id", c.id).select().single());
+      S.cands = S.cands.map((x) => (x.id === c.id ? row : x));
+      layerDirty = false; closeLayer(); toast("Candidate details saved");
+      await reload();
+      if (after) after();
+    } catch (ex) {
+      btn.disabled = false; btn.textContent = "Save changes";
+      if (ex?.code === "23505") { showClash(); fail("That email belongs to another candidate."); } else writeErr(ex);
+    }
+  };
+}
+
 /* ---------- delete candidates ---------- */
 function confirmDelete(ids, after) {
   const list = ids.map(candById).filter(Boolean); if (!list.length) return;
@@ -1407,7 +1462,7 @@ function openDrawer(cid, roleId, tab = "screen") {
   const ctxOpts = [roleId, ...others, ...(roleId ? [null] : [])];
   const d = openLayer(`<div class="drawer" role="dialog" aria-label="${esc(c.name)}">
     <div class="dhead"><div class="avatar">${esc(initials(c.name))}</div><div style="min-width:0"><h2>${esc(c.name || "Unnamed")}</h2><div class="muted">${esc([c.headline, c.location].filter(Boolean).join(", "))}</div></div>
-      <div class="x" style="display:flex;gap:4px"><button class="btn ghost sm danger" id="delhead" title="Delete candidate">${ICON.trash}Delete</button><button class="btn ghost" data-close aria-label="Close">${ICON.x}</button></div></div>
+      <div class="x" style="display:flex;gap:4px"><button class="btn ghost sm" id="edithead" title="Edit candidate details">${ICON.edit}Edit</button><button class="btn ghost sm danger" id="delhead" title="Delete candidate">${ICON.trash}Delete</button><button class="btn ghost" data-close aria-label="Close">${ICON.x}</button></div></div>
     <div class="panel" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center">
       <div><div class="muted small">Screening for</div><select class="in" id="ctx" data-nodirty style="padding:5px 8px;font-weight:700;width:auto">${ctxOpts.map((r) => `<option value="${esc(r || "")}" ${r === roleId ? "selected" : ""}>${esc(roleTitle(r))}</option>`).join("")}</select></div>
       ${stage ? `<div><div class="muted small">Stage</div><select class="in" id="stage" data-nodirty style="padding:5px 8px;width:auto">${STAGES.map((s) => `<option value="${s}" ${s === stage ? "selected" : ""}>${STAGE_LABEL[s] || s}</option>`).join("")}</select></div>` : ""}
@@ -1441,6 +1496,7 @@ function openDrawer(cid, roleId, tab = "screen") {
       <div class="row" style="position:sticky;bottom:0;background:var(--surface);padding:12px 0 0;border-top:1px solid var(--line)"><span class="muted small" id="savedat">${p.updated_at ? "Last saved " + ago(p.updated_at) : ""}</span><button class="btn primary" id="save" style="margin-left:auto">Save screening</button></div>
     </div>
     <div id="tprofile" class="${tab === "profile" ? "" : "hidden"}">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px"><h3 style="margin:0;font-size:15.5px">Candidate details</h3><button type="button" class="btn sm" id="editprof">${ICON.edit}Edit details</button></div>
       <div class="sect"><dl class="kv">
         <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : "—"}</dd>
         <dt>Mobile</dt><dd>${esc(c.phone) || "—"}</dd>
@@ -1511,6 +1567,8 @@ function openDrawer(cid, roleId, tab = "screen") {
     try { await q(sb.rpc("ats_send_to_devicecare", { p_candidate_id: cid })); toast("Added to DeviceCare"); await reload(); openDrawer(cid, roleId, "profile"); }
     catch (e) { todc.disabled = false; todc.textContent = "Add to DeviceCare"; writeErr(e); }
   };
+  const askEdit = () => { if (layerDirty && !window.confirm("Discard your unsaved screening notes?")) return; openEditCand(cid, () => openDrawer(cid, roleId, "profile")); };
+  $("#edithead", d).onclick = askEdit; $("#editprof", d).onclick = askEdit;
   const askDelete = () => { if (layerDirty && !window.confirm("Discard your unsaved screening notes?")) return; confirmDelete([cid]); };
   $("#del", d).onclick = askDelete; $("#delhead", d).onclick = askDelete;
   $$("[data-oldcv]", d).forEach((b) => (b.onclick = () => openCv({ cv_path: c.cv_history[+b.dataset.oldcv].path })));
