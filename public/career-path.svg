@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" viewBox="0 0 600 360" fill="none">
+<title>A career journey from application to opportunity</title>
+<defs>
+ <linearGradient id="path" x1="72" y1="290" x2="525" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#A6D436"/><stop offset="1" stop-color="#6FE3EC"/></linearGradient>
+ <linearGradient id="card" x1="70" y1="90" x2="440" y2="320" gradientUnits="userSpaceOnUse"><stop stop-color="#244C47"/><stop offset="1" stop-color="#173E3A"/></linearGradient>
+</defs>
+<ellipse cx="303" cy="202" rx="242" ry="133" fill="#1C4542" opacity=".35"/>
+<path d="M23 273C140 328 187 167 290 196S419 83 570 78" stroke="#6FE3EC" stroke-opacity=".08" stroke-width="64" stroke-linecap="round"/>
+<path d="M59 284C164 284 168 225 260 220S380 151 410 118S475 60 535 61" stroke="url(#path)" stroke-width="2" stroke-dasharray="5 9" opacity=".65"/>
+<path d="m522 51 15 10-14 12" stroke="#6FE3EC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+<!-- Application profile -->
+<rect x="63" y="116" width="162" height="202" rx="17" fill="#0E2C2B" opacity=".5"/>
+<rect x="54" y="105" width="162" height="202" rx="17" fill="url(#card)" stroke="#52776A" stroke-opacity=".6"/>
+<rect x="70" y="123" width="69" height="5" rx="2.5" fill="#A6D436" opacity=".8"/>
+<circle cx="135" cy="174" r="29" fill="#315C50"/>
+<circle cx="135" cy="166" r="9" fill="#B9D9BF"/>
+<path d="M118 191c1-18 33-18 34 0" fill="#B9D9BF"/>
+<rect x="94" y="216" width="83" height="6" rx="3" fill="#C0D8CB" opacity=".7"/>
+<rect x="80" y="232" width="111" height="5" rx="2.5" fill="#A3C3B7" opacity=".3"/>
+<rect x="95" y="245" width="81" height="5" rx="2.5" fill="#A3C3B7" opacity=".3"/>
+<rect x="92" y="267" width="87" height="22" rx="11" fill="#A6D436" fill-opacity=".14"/>
+<path d="m112 278 4 4 8-9" stroke="#B5D768" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M135 277h28" stroke="#B5D768" stroke-width="3" stroke-linecap="round"/>
+<!-- Interview connection -->
+<rect x="249" y="83" width="163" height="128" rx="14" fill="#0E2C2B" opacity=".4"/>
+<rect x="240" y="74" width="163" height="128" rx="14" fill="#1E4843" stroke="#537B71" stroke-opacity=".6"/>
+<circle cx="253" cy="87" r="2" fill="#86B8A4"/>
+<circle cx="261" cy="87" r="2" fill="#86B8A4" opacity=".6"/>
+<circle cx="269" cy="87" r="2" fill="#86B8A4" opacity=".4"/>
+<rect x="253" y="100" width="65" height="68" rx="7" fill="#2B554A"/>
+<rect x="325" y="100" width="65" height="68" rx="7" fill="#28524F"/>
+<circle cx="285" cy="123" r="9" fill="#BDD69C"/>
+<path d="M269 151c0-20 32-20 32 0" fill="#BDD69C"/>
+<circle cx="357" cy="123" r="9" fill="#94CFCA"/>
+<path d="M341 151c0-20 32-20 32 0" fill="#94CFCA"/>
+<circle cx="308" cy="184" r="5" fill="#6FE3EC" fill-opacity=".6"/>
+<circle cx="324" cy="184" r="5" fill="#A6D436" fill-opacity=".6"/>
+<circle cx="340" cy="184" r="5" fill="#A9C6B9" fill-opacity=".3"/>
+<!-- Career opportunity -->
+<rect x="428" y="30" width="117" height="105" rx="17" fill="#204B43" stroke="#5D8A6A" stroke-opacity=".7"/>
+<path d="M474 64v-9a4 4 0 0 1 4-4h17a4 4 0 0 1 4 4v9" stroke="#B5D768" stroke-width="3"/>
+<rect x="456" y="64" width="60" height="43" rx="7" fill="#A6D436" fill-opacity=".12" stroke="#B5D768" stroke-width="2"/>
+<path d="M457 77c17 13 43 13 58 0" stroke="#B5D768" stroke-width="2"/>
+<rect x="482" y="78" width="9" height="11" rx="2" fill="#B5D768"/>
+<circle cx="538" cy="31" r="16" fill="#A6D436"/>
+<path d="m531 31 5 5 9-10" stroke="#123333" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="39" cy="203" r="4" fill="#6FE3EC" opacity=".35"/>
+<circle cx="434" cy="263" r="5" fill="#A6D436" opacity=".35"/>
+<path d="M192 57v12m-6-6h12M477 206v12m-6-6h12" stroke="#78B5A3" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+</svg>

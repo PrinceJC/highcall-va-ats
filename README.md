@@ -44,7 +44,7 @@ Run it the same way you ran the first one:
 2. Copy the file into the DeviceCare repo's `supabase/migrations/` folder and commit it.
 3. Before your next `supabase db push` from DeviceCare, mark both ATS files as applied:
    ```powershell
-   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000
+   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200
    ```
 
 **Then the offers and outcomes update:** run `for-devicecare-repo/supabase/migrations/20261112140000_ats_outcomes.sql` the same way. It adds:
@@ -56,7 +56,7 @@ Run it the same way you ran the first one:
 
 When you repair the migration history later, include all four versions:
 ```powershell
-npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000
+npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200
 ```
 
 Stage history starts from the moment this runs. Anything already in a pipeline is back-filled with the best available dates.
@@ -90,9 +90,30 @@ Recruiters email candidates from the ATS using branded templates. Candidates who
    npx supabase functions deploy ats-send-email --no-verify-jwt
    ```
 
-**3. Sender:** in the ATS, go to **Settings → Email sender** and set the sender email. It must be on a domain verified in Resend, such as the one DeviceCare already sends from. Then click **Send me a test** on any template.
+**3. Sender:** in the ATS, go to **Hiring setup → Email sender** and set the sender email. It must be on a domain verified in Resend, such as the one DeviceCare already sends from. Then click **Send me a test** on any template.
 
 The logo in emails loads from `https://YOUR-ATS.vercel.app/email-logo.png`, so it appears once the ATS is deployed. Set `ATS_ALLOW_LOCALHOST=false` once you no longer test locally.
+
+
+## HR Manager, team accounts and passwords
+
+**Access levels:** Admin, Recruiter, **HR Manager** (runs interviews: Interviews page, role pipelines, stage changes, ratings, interview notes, candidate emails), Member.
+
+**Account service:** admins add people in **Hiring setup → Team**. New people get a branded email with a one-time link to set their password; existing HCVA logins get access straight away. "Forgot your password?" and the Team list's **Password link** use the same service, sent through Resend.
+
+Setup (from the DeviceCare folder):
+1. Run `supabase/migrations/20261119000100_ats_hr_manager.sql` in the SQL Editor and copy it into DeviceCare's `supabase/migrations`.
+2. Copy `supabase/functions/ats-admin-users` into DeviceCare's `supabase/functions`, and replace `supabase/functions/ats-send-email/handler.mjs`.
+3. Add to DeviceCare's `supabase/config.toml`:
+   ```toml
+   [functions.ats-admin-users]
+   verify_jwt = false
+   ```
+4. Deploy both:
+   ```powershell
+   npx supabase functions deploy ats-admin-users --no-verify-jwt
+   npx supabase functions deploy ats-send-email --no-verify-jwt
+   ```
 
 ## 1. Add the database changes through the DeviceCare repo
 
@@ -164,8 +185,8 @@ npm run dev             # http://localhost:5173
 
 ## Adding teammates
 
-- **They already have a DeviceCare login:** in the ATS, go to **Settings → Team**, enter their email and choose an access level.
-- **They're new:** in Supabase, go to **Authentication → Users → Add user → Create new user**. Enter their email and a temporary password, and tick **Auto Confirm User**. Then add them in **Settings → Team**. They can change their password with "Forgot your password?".
+- **They already have a DeviceCare login:** in the ATS, go to **Hiring setup → Team**, enter their email and choose an access level.
+- **They're new:** in Supabase, go to **Authentication → Users → Add user → Create new user**. Enter their email and a temporary password, and tick **Auto Confirm User**. Then add them in **Hiring setup → Team**. They can change their password with "Forgot your password?".
 
 | Access | What they can do |
 |---|---|
@@ -188,7 +209,7 @@ The ATS never creates logins on its own. Whether public sign-ups are enabled sta
 
 - Operators: `AND`, `OR`, `NOT` (or `-word`).
 - Brackets for grouping, `"exact phrases"` in quotes, and `assist*` for word starts.
-- Field filters: `name:`, `skill:`, `location:`, `headline:`, `role:`, `cv:`, `os:`, `note:`.
+- Field filters: `tag:`, `name:`, `skill:`, `location:`, `headline:`, `role:`, `cv:`, `os:`, `note:`. Use quotes for tags with spaces: `tag:"night shift"`.
 
 Example: `("cold calling" OR appointment*) AND skill:gohighlevel NOT location:manila`
 

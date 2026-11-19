@@ -3,6 +3,7 @@
 export const FIELDS = {
   name: "name", email: "email", skill: "skills", skills: "skills", location: "location", loc: "location",
   headline: "headline", title: "headline", role: "roles", cv: "cv", note: "note", os: "os", availability: "availability",
+  tag: "tags", tags: "tags",
 };
 
 function tokenize(q) {
@@ -84,9 +85,10 @@ export function haystack(c, roleTitles) {
   const f = {
     name: c.name, email: c.email, skills: (c.skills || []).join(", "), location: c.location, headline: c.headline,
     roles: roleTitles, cv: c.cv_text || "", note: c.note || "", os: [d.os, d.cpu].join(" "), availability: c.availability,
+    tags: (c.tags || []).join(" | "),
   };
   const low = {}; for (const k in f) low[k] = String(f[k] || "").toLowerCase();
-  low.all = [c.name, c.email, c.phone, c.location, c.headline, f.skills, c.availability, c.note, c.years && c.years + " years", roleTitles, c.cv_text, d.os, d.cpu, d.isp]
+  low.all = [c.name, c.email, c.phone, c.location, c.headline, f.skills, c.availability, c.note, c.years && c.years + " years", roleTitles, f.tags, c.cv_text, d.os, d.cpu, d.isp]
     .filter(Boolean).join("\n").toLowerCase();
   cache.set(c, low);
   return low;

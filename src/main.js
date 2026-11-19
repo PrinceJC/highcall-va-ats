@@ -8,6 +8,7 @@ import LOGO from "./assets/logo.png";
 import { sb, configured } from "./supabase.js";
 import { searchList } from "./search.js";
 
+const ROLE_LABEL = { admin: "Admin", recruiter: "Recruiter", hr_manager: "HR Manager", member: "Member" };
 const STAGES = ["Sourced", "Applied", "Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Withdrawn"];
 // Rejected = HighCall VA decided not to continue. Withdrawn = the candidate declined or pulled out.
 const STAGE_LABEL = { Rejected: "Rejected (our decision)", Withdrawn: "Withdrawn (candidate declined or pulled out)" };
@@ -16,7 +17,7 @@ const APP_NAME = "HighCall Careers"; // product name in the sidebar, like "Devic
 const STATUS_LABEL = { draft: "Draft", public: "Public", internal: "Internal", archived: "Archived" };
 const S = {
   session: null, staff: null, recovery: false, isRecruiter: false, isAdmin: false, isMember: false,
-  roles: [], cands: [], pipes: [], templates: [], settings: {}, team: [], mailTemplates: [], emails: [],
+  roles: [], cands: [], pipes: [], templates: [], settings: {}, team: [], mailTemplates: [], emails: [], notes: [],
   ready: false, loadError: "",
   ui: { route: null, poolQ: "", roleQ: "", stage: "all", roleTab: "active", sel: new Set(), rsel: new Set(), f: {}, targetRole: "", openJob: null },
 };
@@ -44,6 +45,10 @@ function writeErr(e) {
   else toast(e?.message ? "Couldn’t save: " + e.message : "That didn’t save. Check your connection and try again.");
 }
 const ICON = {
+  tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/></svg>',
+  note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12l-4 4H4z"/><path d="M8 9h8M8 13h5"/></svg>',
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   setup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>',
@@ -96,24 +101,27 @@ async function setSession(session) {
   if (session) { S.staff = (await sb.from("ats_staff").select("*").eq("user_id", session.user.id).maybeSingle()).data || null; }
   S.isAdmin = S.staff?.role === "admin";
   S.isRecruiter = S.isAdmin || S.staff?.role === "recruiter";
+  S.isHR = S.staff?.role === "hr_manager";
+  S.isReviewer = S.isRecruiter || S.isHR; // can open candidates, interview, take notes
   S.isMember = !!S.staff;
 }
 async function loadAll() {
   S.loadError = "";
   try {
     const jobs = [q(sb.from("ats_settings").select("key,value")), q(sb.from("ats_roles").select("*").order("updated_at", { ascending: false }))];
-    if (S.isRecruiter) jobs.push(
+    if (S.isReviewer) jobs.push(
       q(sb.from("ats_candidates").select("*").order("created_at", { ascending: false })),
       q(sb.from("ats_pipeline").select("*")),
       q(sb.from("ats_screening_templates").select("*")),
       q(sb.from("ats_staff").select("*").order("created_at")),
       q(sb.from("ats_email_templates").select("*").order("name")).catch(() => []),
+      q(sb.from("ats_notes").select("*").order("created_at", { ascending: false }).limit(5000)).catch(() => []),
       q(sb.from("ats_emails").select("id,candidate_id,pipeline_id,role_id,stage,template_id,to_email,subject,status,error,sent_by,created_at").order("created_at", { ascending: false }).limit(5000)).catch(() => []),
     );
-    const [settings, roles, cands, pipes, templates, team, mailTemplates, emails] = await Promise.all(jobs);
+    const [settings, roles, cands, pipes, templates, team, mailTemplates, notes, emails] = await Promise.all(jobs);
     S.settings = Object.fromEntries((settings || []).map((r) => [r.key, r.value]));
     S.roles = roles || [];
-    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || []; S.mailTemplates = mailTemplates || []; S.emails = emails || [];
+    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || []; S.mailTemplates = mailTemplates || []; S.notes = notes || []; S.emails = emails || [];
   } catch (e) { console.error(e); S.loadError = "Couldn’t load data. Check your connection and refresh."; }
   S.ready = true;
 }
@@ -122,13 +130,19 @@ let focusT = 0;
 window.addEventListener("focus", () => { if (S.isRecruiter && Date.now() - focusT > 20000 && !$("#layer").innerHTML) { focusT = Date.now(); reload(); } });
 
 /* ---------- routing ---------- */
-const STAFF_ROUTES = ["dashboard", "roles", "pool", "config"];
+const STAFF_ROUTES = ["dashboard", "interviews", "roles", "pool", "config"];
+const homeRoute = () => (S.isRecruiter ? "dashboard" : S.isHR ? "interviews" : S.isMember ? "careers" : "noaccess");
+function canOpen(h) {
+  if (S.isRecruiter) return STAFF_ROUTES.includes(h) || h.startsWith("role-");
+  if (S.isHR) return ["interviews", "roles"].includes(h) || h.startsWith("role-"); // HR managers: interviews and role pipelines
+  return false;
+}
 function route() {
   let h = location.hash.replace(/^#/, "");
   if (S.recovery && S.session) { S.ui.route = "setpw"; render(); return; }
-  if (h === "login" && S.session) h = S.isRecruiter ? "dashboard" : S.isMember ? "careers" : "noaccess";
-  else if (STAFF_ROUTES.includes(h) || h.startsWith("role-")) { if (!S.isRecruiter) h = S.session ? "noaccess" : "login"; }
-  else if (h !== "login") h = S.isRecruiter && !h ? "dashboard" : "careers";
+  if (h === "login" && S.session) h = homeRoute();
+  else if (STAFF_ROUTES.includes(h) || h.startsWith("role-")) { if (!canOpen(h)) h = S.session ? (S.isReviewer ? homeRoute() : "noaccess") : "login"; }
+  else if (h !== "login") h = S.isReviewer && !h ? homeRoute() : "careers";
   S.ui.route = h; render();
 }
 window.addEventListener("hashchange", () => { S.ui.sel.clear(); S.ui.rsel.clear(); S.ui.roleQ = ""; S.ui.stage = "all"; route(); });
@@ -141,7 +155,7 @@ function render() {
   update(r);
 }
 function refresh() { if (S.ui.route) render(); }
-const CRUMB = { dashboard: "Dashboard", roles: "Roles", pool: "Talent pool", config: "Hiring setup" };
+const CRUMB = { interviews: "Interviews", dashboard: "Dashboard", roles: "Roles", pool: "Talent pool", config: "Hiring setup" };
 const manilaDate = () => new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }).format(new Date());
 function shell(r) {
   document.body.classList.toggle("site-careers", r === "careers");
@@ -149,7 +163,9 @@ function shell(r) {
     const bar = S.isRecruiter && r === "careers" ? `<div class="previewbar"><span>You’re viewing the public careers page</span><a class="btn sm" href="#dashboard">Back to recruiting</a></div>` : "";
     return `<div class="app public">${bar}<div id="view"></div></div>`;
   }
-  const nav = [["dashboard", "Dashboard", ICON.dash], ["roles", "Roles", ICON.roles], ["pool", "Talent pool", ICON.pool], ["careers", "Careers page", ICON.careers], ["config", "Hiring setup", ICON.setup]];
+  const nav = S.isRecruiter
+    ? [["dashboard", "Dashboard", ICON.dash], ["interviews", "Interviews", ICON.mic], ["roles", "Roles", ICON.roles], ["pool", "Talent pool", ICON.pool], ["careers", "Careers page", ICON.careers], ["config", "Hiring setup", ICON.setup]]
+    : [["interviews", "Interviews", ICON.mic], ["roles", "Roles", ICON.roles], ["careers", "Careers page", ICON.careers]];
   const cur = r.startsWith("role-") ? "roles" : r;
   const role = r.startsWith("role-") ? roleById(r.slice(5)) : null;
   const crumb = role ? `<a href="#roles" style="color:inherit;text-decoration:none">Roles</a><i>/</i><b>${esc(role.title)}</b>` : `<b>${CRUMB[cur] || ""}</b>`;
@@ -160,20 +176,21 @@ function shell(r) {
       <div class="brand"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
       <nav class="nav side-main" aria-label="Main navigation">${nav.map(navLink).join("")}</nav>
       <div class="side-bottom">
-        <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong title="${esc(S.staff?.email || S.session?.user?.email || "")}">${esc(S.staff?.name || S.staff?.email || S.session?.user?.email || "HighCall VA Recruiting")}</strong><small>${S.isAdmin ? "Admin" : "Recruiter"} workspace</small></div></div>
-        <a href="#" id="signout" class="side-signout">${ICON.logout}Sign out</a>
+        <div class="side-profile"><span class="side-avatar">${esc(initials)}</span><div><strong title="${esc(S.staff?.email || S.session?.user?.email || "")}">${esc(S.staff?.name || S.staff?.email || S.session?.user?.email || "HighCall VA Recruiting")}</strong><small>${ROLE_LABEL[S.staff?.role] || "Team"} workspace</small></div></div>
+        <div class="side-links"><a href="#" id="chgpw" class="side-signout">${ICON.key}Change password</a><a href="#" id="signout" class="side-signout">${ICON.logout}Sign out</a></div>
       </div>
     </aside>
     <div class="main">
       <header class="topbar"><button class="menubtn" id="menubtn" aria-label="Open menu">${ICON.menu}</button>
         <div class="crumbs"><span>HCVA</span><i>/</i>${crumb}</div>
-        <div class="meta"><span class="when">${manilaDate()} · Manila</span><span class="session">${S.isAdmin ? "Admin" : "Recruiter"} session</span></div>
+        <div class="meta"><span class="when">${manilaDate()} · Manila</span><span class="session">${ROLE_LABEL[S.staff?.role] || "Team"} session</span></div>
       </header>
       <main id="view"></main>
     </div></div>`;
 }
 function bindShell() {
   const so = $("#signout"); if (so) so.onclick = (e) => { e.preventDefault(); signOut(); };
+  const cp = $("#chgpw"); if (cp) cp.onclick = (e) => { e.preventDefault(); openChangePassword(); };
   const mb = $("#menubtn"), app = $("#app");
   if (mb && app) {
     mb.onclick = () => app.classList.toggle("navopen");
@@ -214,6 +231,7 @@ function update(r) {
   if (r === "noaccess") return viewNoAccess(v);
   if (S.loadError) { v.innerHTML = `<div class="note warn">${esc(S.loadError)}</div>`; return; }
   if (r === "dashboard") return viewDashboard(v);
+  if (r === "interviews") return viewInterviews(v);
   if (r === "roles") return viewRoles(v);
   if (r === "pool") return viewPool(v);
   if (r === "config") return viewSettings(v);
@@ -258,6 +276,7 @@ function viewLogin(v, mode = "signin") {
     <span class="auth-eyebrow">${reset ? "Password help" : "Welcome to HighCall Careers"}</span>
     <h1 class="auth-title">${reset ? "Reset your password" : "Sign in to your workspace"}</h1>
     ${S.justSignedOut && !reset ? `<div class="note auth-note">You’re signed out.</div>` : ""}
+    ${S.linkError ? `<div class="note warn auth-note">That password link has expired or was already used. Use “Forgot your password?” to get a new one.</div>` : ""}
     <p class="auth-sub">${reset ? "Enter your HCVA login email and we’ll send a link to set a new password." : "Manage roles, candidates and hiring. Use the same login as DeviceCare."}</p>
     <form class="auth-form" id="lf" novalidate>
       <label for="lemail">Work email</label>
@@ -277,9 +296,11 @@ function viewLogin(v, mode = "signin") {
     if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Enter your login email.");
     b.disabled = true; lbl.textContent = reset ? "Sending…" : "Signing in…";
     if (reset) {
-      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + "/?recovery=1" });
+      let error = null;
+      try { await callAccountFn({ action: "forgot", email }); }
+      catch (ex) { if (ex.notDeployed) ({ error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + "/?recovery=1" })); else error = ex; }
       if (error && /rate|limit/i.test(error.message)) return fail("Too many emails were sent recently. Wait a few minutes and try again.");
-      f.outerHTML = `<div class="note">If ${esc(email)} has an HCVA login, a reset link is on its way. Open it in this browser.</div>`;
+      f.outerHTML = `<div class="note">If ${esc(email)} belongs to a HighCall Careers team member, we’ve emailed a link to set a new password. Check your inbox (and spam folder).</div>`;
       return;
     }
     if (!f.elements.password.value) return fail("Enter your password.");
@@ -304,7 +325,7 @@ function viewSetPassword(v) {
     b.disabled = true; b.textContent = "Saving…";
     const { error } = await sb.auth.updateUser({ password: f.elements.p1.value });
     if (error) return fail(error.message);
-    S.recovery = false; toast("Password updated"); mounted = null; location.hash = S.isRecruiter ? "dashboard" : "careers"; route();
+    S.recovery = false; S.linkError = false; toast("Password updated"); mounted = null; location.hash = homeRoute(); route();
   };
 }
 function viewNoAccess(v) {
@@ -701,13 +722,73 @@ function mailPanel(d) {
   </div>`;
 }
 
+
+/* ---------- interviews (HR managers, recruiters, admins) ---------- */
+const INTERVIEW_TABS = [["Interview", "Interviewing"], ["Offer", "Offer stage"], ["active", "All in progress"]];
+function viewInterviews(v) {
+  if (!S.ui.ivTab) S.ui.ivTab = "Interview";
+  const open = new Set(S.roles.filter((r) => r.status === "public" || r.status === "internal").map((r) => r.id));
+  const inProgress = (p) => p.role_id && open.has(p.role_id) && candById(p.candidate_id) && ["Shortlisted", "Screening", "Interview", "Offer"].includes(p.stage);
+  const all = S.pipes.filter(inProgress);
+  const count = (k) => all.filter((p) => k === "active" || p.stage === k).length;
+  const list = all.filter((p) => S.ui.ivTab === "active" || p.stage === S.ui.ivTab).sort((a, b) => ts(a.stage_changed_at || a.updated_at) - ts(b.stage_changed_at || b.updated_at));
+  const lastNote = (p) => S.notes.find((n) => n.candidate_id === p.candidate_id && (!n.role_id || n.role_id === p.role_id));
+  v.innerHTML = `${pageHead("Interview stage", "Interviews", "Candidates you’re interviewing across open roles. Open someone to take notes, rate them and move them on.")}
+  <div class="tabs">${INTERVIEW_TABS.map(([k, l]) => `<button data-iv="${k}" class="${S.ui.ivTab === k ? "on" : ""}">${l}<span class="n">${count(k)}</span></button>`).join("")}</div>
+  <div class="panel table-wrap">${list.length ? `<table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Stage</th><th>In stage since</th><th>Email</th><th>Latest note</th></tr></thead><tbody>
+    ${list.map((p) => { const c = candById(p.candidate_id), n = lastNote(p); return `<tr data-iv-c="${esc(c.id)}" data-iv-r="${esc(p.role_id)}" style="cursor:pointer">
+      <td class="who"><b>${esc(c.name)}</b><span>${esc(c.headline || c.email || "")}</span></td>
+      <td>${esc(roleTitle(p.role_id))}</td>
+      <td><span class="badge">${esc(p.stage)}</span></td>
+      <td class="muted">${ago(p.stage_changed_at || p.updated_at)}</td>
+      <td>${emailBadge(p, { short: true })}</td>
+      <td class="small" style="max-width:280px">${n ? `<span class="muted">${fmtDate(n.created_at)}:</span> ${esc(n.body.slice(0, 90))}${n.body.length > 90 ? "…" : ""}` : `<span class="muted">No notes yet</span>`}</td></tr>`; }).join("")}
+  </tbody></table>` : `<div class="empty">${ICON.mic}<h3>No one here right now</h3><p>${S.ui.ivTab === "Interview" ? "When a candidate is moved to the Interview stage, they appear here." : "Candidates at this stage appear here."}</p></div>`}</div>`;
+  $$("[data-iv]", v).forEach((b) => (b.onclick = () => { S.ui.ivTab = b.dataset.iv; viewInterviews(v); }));
+  $$("[data-iv-c]", v).forEach((tr) => (tr.onclick = () => openDrawer(tr.dataset.ivC, tr.dataset.ivR, "notes")));
+}
+
+/* ---------- account: change password, password emails ---------- */
+function openChangePassword() {
+  const m = openLayer(`<form class="modal" style="width:min(480px,100%)" novalidate>
+    <div class="dhead"><div><h2>Change password</h2><div class="muted small" style="margin-top:4px">This changes your HCVA login, so it also applies to DeviceCare.</div></div><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    <label class="f">New password<span class="hint">At least 8 characters</span><input class="in" type="password" name="p1" autocomplete="new-password"></label>
+    <label class="f">Confirm new password<input class="in" type="password" name="p2" autocomplete="new-password"></label>
+    <div class="qerr hidden" id="cperr" role="alert"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit" id="cpsave">Save new password</button></div>
+  </form>`);
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  m.onsubmit = async (e) => {
+    e.preventDefault(); const err = $("#cperr", m), b = $("#cpsave", m);
+    const fail = (t) => { err.textContent = t; err.classList.remove("hidden"); b.disabled = false; b.textContent = "Save new password"; };
+    const p1 = m.elements.p1.value, p2 = m.elements.p2.value;
+    if (p1.length < 8) return fail("Use at least 8 characters.");
+    if (p1 !== p2) return fail("The two passwords don’t match.");
+    b.disabled = true; b.textContent = "Saving…";
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) return fail(/reauth|recent/i.test(error.message) ? "For security, sign out and use “Forgot your password?” to set a new one." : error.message);
+    layerDirty = false; closeLayer(); toast("Password updated");
+  };
+}
+async function callAccountFn(body) {
+  const { data, error } = await sb.functions.invoke("ats-admin-users", { body });
+  if (error) {
+    let msg = error.message || "Something went wrong.";
+    try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch {}
+    const notDeployed = /Failed to send a request|FunctionsFetchError|not found|404/i.test(msg);
+    const e = new Error(notDeployed ? "The account service isn’t deployed yet. Deploy the ats-admin-users function in Supabase (see README)." : msg);
+    e.notDeployed = notDeployed; throw e;
+  }
+  return data;
+}
+
 /* ---------- roles ---------- */
 function viewRoles(v) {
   const tab = S.ui.roleTab;
   const groups = { active: S.roles.filter((r) => r.status === "public" || r.status === "internal"), draft: S.roles.filter((r) => r.status === "draft"), archived: S.roles.filter((r) => r.status === "archived") };
   const list = groups[tab];
   v.innerHTML = `
-  ${pageHead("Your open positions", "Roles", "Publish roles publicly on the careers page or internally for the team.", `<button class="btn primary" id="newrole">${ICON.plus}New role</button>`)}
+  ${pageHead("Your open positions", "Roles", "Publish roles publicly on the careers page or internally for the team.", (S.isRecruiter ? `<button class="btn primary" id="newrole">${ICON.plus}New role</button>` : ""))}
   <div class="tabs">${[["active", "Open"], ["draft", "Drafts"], ["archived", "Archived"]].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}<span class="n">${groups[k].length}</span></button>`).join("")}</div>
   ${list.length ? `<div class="panel list">${list.map((r) => {
     const es = roleEntries(r.id), active = es.filter((e) => !CLOSED.includes(e.stage)).length, fresh = es.filter((e) => e.stage === "Applied").length;
@@ -818,17 +899,19 @@ function viewRole(v, id) {
       <div class="row" style="gap:14px"><h1>${esc(role.title)}</h1><span class="badge ${role.status}"><span class="dot"></span>${STATUS_LABEL[role.status]}</span></div>
       <div class="sub">${[role.employment_type, role.location, role.schedule].filter(Boolean).map(esc).join(", ")}</div></div>
     <div class="actions">
-      <select class="in" id="vis" style="width:auto;padding:11px 12px" aria-label="Visibility">${[["draft", "Draft"], ["public", "Published publicly"], ["internal", "Published internally"], ["archived", "Archived"]].map(([k, l]) => `<option value="${k}" ${role.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+      ${S.isRecruiter ? `<select class="in" id="vis" style="width:auto;padding:11px 12px" aria-label="Visibility">${[["draft", "Draft"], ["public", "Published publicly"], ["internal", "Published internally"], ["archived", "Archived"]].map(([k, l]) => `<option value="${k}" ${role.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
       <button class="btn" id="edit">Edit role</button>
       <button class="btn" id="addcand">${ICON.plus}Add candidate</button>
       <button class="btn" id="bulkcand">${ICON.inbox}Bulk upload CVs</button>
-      <button class="btn primary" id="frompool">Copy from talent pool</button>
+      <button class="btn primary" id="frompool">Copy from talent pool</button>` : ""}
     </div></div>`;
+  if (S.isRecruiter) {
   $("#vis", v).onchange = (e) => setRoleStatus(role, e.target.value);
   $("#edit", v).onclick = () => openRoleEditor(role);
   $("#addcand", v).onclick = () => openAddCand(role.id);
   $("#bulkcand", v).onclick = () => openBulkUpload(role.id);
   $("#frompool", v).onclick = () => { S.ui.targetRole = role.id; go("pool"); };
+  }
   const counts = Object.fromEntries(STAGES.map((s) => [s, 0])); es.forEach((e) => (counts[e.stage] = (counts[e.stage] || 0) + 1));
   $("#pstrip", v).innerHTML = [["all", "All", es.length], ...STAGES.map((s) => [s, s, counts[s]])].map(([k, l, n]) => `<button data-st="${k}" class="${S.ui.stage === k ? "on" : ""}"><div class="k">${l}</div><div class="v">${n}</div></button>`).join("");
   $$("#pstrip button", v).forEach((b) => (b.onclick = () => { S.ui.stage = b.dataset.st; viewRole(v, id); }));
@@ -845,13 +928,13 @@ function drawRoleList(v, id) {
   const allOn = list.length && list.every((e) => S.ui.rsel.has(e.cand.id));
   $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th class="cb"><input type="checkbox" id="rall" ${allOn ? "checked" : ""} aria-label="Select all shown"></th><th>Candidate</th><th>Stage</th><th>Email</th><th>Setup</th><th>Rating</th><th>Added</th></tr></thead><tbody>
     ${list.map((e) => { const c = e.cand, rd = readiness(c, role), rt = e.pipe.rating || 0;
-      return `<tr data-c="${esc(c.id)}"><td class="cb"><input type="checkbox" data-rsel="${esc(c.id)}" ${S.ui.rsel.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}"></td><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span></td>
+      return `<tr data-c="${esc(c.id)}"><td class="cb"><input type="checkbox" data-rsel="${esc(c.id)}" ${S.ui.rsel.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}"></td><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span>${tagChips(c)}</td>
       <td><span class="badge ${e.stage === "Hired" ? "ok" : e.stage === "Rejected" ? "bad" : e.stage === "Withdrawn" ? "draft" : ""}">${e.stage}</span>${e.stage === "Hired" ? (c.va_person_id ? ` <span class="muted small">In DeviceCare</span>` : ` <span class="muted small">Not in DeviceCare yet</span>`) : ""}</td>
       <td>${emailBadge(e.pipe, { short: true })}</td>
       <td><span class="badge ${rd.cls}">${esc(rd.label)}</span></td>
       <td>${rt ? `<span style="color:#E2B007">${"★".repeat(rt)}</span><span style="color:var(--line)">${"★".repeat(5 - rt)}</span>` : `<span class="muted">Not rated</span>`}</td>
       <td class="muted">${ago(e.appliedAt)}<br><span class="small">${e.pipe.source === "applied" ? "Applied" : e.pipe.source === "sourced" ? "From pool" : "Added by recruiter"}</span></td></tr>`; }).join("")}</tbody></table>`
-    : `<div class="empty">${roleEntries(id).length ? `<h3>No matches</h3><p>Try a different stage or search.</p>` : `<h3>No candidates yet</h3><p>${role.status === "public" ? "Applications from the careers page land here." : role.status === "internal" ? "Team members who apply internally land here." : "Publish the role so candidates can apply, or copy people in from the talent pool."}</p><button class="btn primary" data-fp>Copy from talent pool</button>`}</div>`;
+    : `<div class="empty">${roleEntries(id).length ? `<h3>No matches</h3><p>Try a different stage or search.</p>` : `<h3>No candidates yet</h3><p>${role.status === "public" ? "Applications from the careers page land here." : role.status === "internal" ? "Team members who apply internally land here." : "Publish the role so candidates can apply, or copy people in from the talent pool."}</p>${S.isRecruiter ? `<button class="btn primary" data-fp>Copy from talent pool</button>` : ""}`}</div>`;
   $$("tr[data-c]", v).forEach((tr) => (tr.onclick = (ev) => { if (ev.target.closest("input")) return; openDrawer(tr.dataset.c, id); }));
   $$("[data-rsel]", v).forEach((cb) => (cb.onchange = () => { cb.checked ? S.ui.rsel.add(cb.dataset.rsel) : S.ui.rsel.delete(cb.dataset.rsel); drawRoleBulk(v, id); }));
   const ra = $("#rall", v); if (ra) ra.onchange = () => { list.forEach((e) => (ra.checked ? S.ui.rsel.add(e.cand.id) : S.ui.rsel.delete(e.cand.id))); drawRoleList(v, id); };
@@ -865,9 +948,11 @@ function drawRoleBulk(v, roleId) {
   if (!n) { b.innerHTML = ""; return; }
   b.innerHTML = `<div class="bulk"><b>${n} selected</b>
     <button class="btn go sm" id="rbulkmail">${ICON.send}Email selected</button>
+    <button class="btn sm" id="rbulktag" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">${ICON.tag}Tag</button>
     <button class="btn ghost sm" id="runsel" style="color:inherit">Clear</button></div>`;
   $("#runsel", b).onclick = () => { S.ui.rsel.clear(); drawRoleList(v, roleId); };
   $("#rbulkmail", b).onclick = () => openBulkEmail([...S.ui.rsel], roleId);
+  $("#rbulktag", b).onclick = () => openBulkTag([...S.ui.rsel]);
 }
 
 /* ---------- talent pool ---------- */
@@ -876,7 +961,7 @@ function viewPool(v) {
     v.dataset.v = "pool"; const f = S.ui.f;
     v.innerHTML = `${pageHead("Every candidate, one place", "Talent pool", "Everyone who applied or joined the pool. Search, filter, and copy people into a role.", `<button class="btn" id="bulkc">${ICON.inbox}Bulk upload CVs</button><button class="btn primary" id="addc">${ICON.plus}Add candidate</button>`)}
       <div class="search"><input class="in" id="pq" type="search" value="${esc(S.ui.poolQ)}" placeholder='(“cold calling” OR appointment*) AND skill:gohighlevel NOT location:manila' aria-label="Boolean search"></div>
-      <div class="help">Use <code>AND</code> <code>OR</code> <code>NOT</code>, brackets, <code>"exact phrase"</code>, <code>admin*</code> for word starts, and fields like <code>skill:</code> <code>location:</code> <code>name:</code> <code>role:</code> <code>cv:</code> <code>os:</code>. Searches CV text too.</div>
+      <div class="help">Use <code>AND</code> <code>OR</code> <code>NOT</code>, brackets, <code>"exact phrase"</code>, <code>admin*</code> for word starts, and fields like <code>tag:</code> <code>skill:</code> <code>location:</code> <code>name:</code> <code>role:</code> <code>cv:</code> <code>os:</code>. Use quotes for tags with spaces, like <code>tag:"night shift"</code>. Searches CV text too.</div>
       <div id="pqerr"></div>
       <div class="panel" style="margin-top:16px">
         <div class="filters">
@@ -884,6 +969,7 @@ function viewPool(v) {
           <label class="f">Availability<select class="in" data-f="avail">${["", "Full-time", "Part-time", "Project-based"].map((o) => `<option value="${o}" ${f.avail === o ? "selected" : ""}>${o || "Any"}</option>`).join("")}</select></label>
           <label class="f">Min. years<input class="in" type="number" min="0" data-f="years" value="${esc(f.years)}" style="width:100px"></label>
           <label class="f">Min. download Mbps<input class="in" type="number" min="0" data-f="down" value="${esc(f.down)}" style="width:120px"></label>
+          <label class="f">Tag<select class="in" data-f="tag" id="tagfilter"></select></label>
           <label class="f">Roles<select class="in" data-f="inrole" id="inrole"></select></label>
           <div class="row" style="gap:6px 14px;padding-bottom:8px">${[["cv", "Has CV"], ["bd", "Backup device"], ["bn", "Backup internet"], ["bp", "Backup power"]].map(([k, l]) => `<label class="chk"><input type="checkbox" data-f="${k}" ${f[k] ? "checked" : ""}>${l}</label>`).join("")}</div>
           <button class="btn ghost sm" id="clr" style="margin-bottom:6px">Clear filters</button>
@@ -897,6 +983,8 @@ function viewPool(v) {
     $("#bulkc", v).onclick = () => openBulkUpload(null);
   }
   const cur = S.ui.f.inrole || "";
+  const curTag = S.ui.f.tag || "";
+  $("#tagfilter", v).innerHTML = [["", "Any"], ...allTags().map((t) => [t, t])].map(([k, l]) => `<option value="${esc(k)}" ${curTag.toLowerCase() === k.toLowerCase() && (k || !curTag) ? "selected" : ""}>${esc(l)}</option>`).join("");
   $("#inrole", v).innerHTML = [["", "Any"], ["none", "Not in any role"], ...S.roles.filter((r) => r.status !== "archived").map((r) => [r.id, "In: " + r.title])].map(([k, l]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>${esc(l)}</option>`).join("");
   drawPool(v);
 }
@@ -912,6 +1000,7 @@ function drawPool(v) {
     if (f.bd && d.backupDevice !== "yes") return false;
     if (f.bn && d.backupNet !== "yes") return false;
     if (f.bp && d.backupPower !== "yes") return false;
+    if (f.tag && !(c.tags || []).some((t) => t.toLowerCase() === f.tag.toLowerCase())) return false;
     if (f.inrole === "none" && rs.length) return false;
     if (f.inrole && f.inrole !== "none" && !rs.includes(f.inrole)) return false;
     return true;
@@ -923,7 +1012,7 @@ function drawPool(v) {
   $("#plist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th class="cb"><input type="checkbox" id="all" ${allOn ? "checked" : ""} aria-label="Select all shown"></th><th>Candidate</th><th>Location</th><th>Skills</th><th>Setup</th><th>Roles</th><th>Added</th></tr></thead><tbody>
     ${list.map(({ cand: c }) => { const d = c.device || {}, b = ["backupDevice", "backupNet", "backupPower"].filter((k) => d[k] === "yes").length, rs = candRoles(c);
       return `<tr data-c="${esc(c.id)}"><td class="cb"><input type="checkbox" data-sel="${esc(c.id)}" ${S.ui.sel.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}"></td>
-      <td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span></td>
+      <td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span>${tagChips(c)}</td>
       <td>${esc(c.location || "")}</td>
       <td>${(c.skills || []).slice(0, 3).map((s) => `<span class="chip">${esc(s)}</span>`).join("")}${(c.skills || []).length > 3 ? `<span class="muted small">+${c.skills.length - 3}</span>` : ""}</td>
       <td>${d.checkedAt ? `<span class="small">${d.down ? esc(d.down) + " Mbps" : "Speed not set"}</span><br><span class="muted small">${b} of 3 backups</span>` : `<span class="muted small">Not checked</span>`}</td>
@@ -949,11 +1038,13 @@ function drawBulk(v) {
     <select id="tgt" aria-label="Role to copy into">${roles.length ? roles.map((r) => `<option value="${esc(r.id)}" ${S.ui.targetRole === r.id ? "selected" : ""}>${esc(r.title)} (${STATUS_LABEL[r.status]})</option>`).join("") : `<option value="">Create a role first</option>`}</select>
     <button class="btn go sm" id="copy" ${roles.length ? "" : "disabled"}>Copy to role</button>
     <button class="btn sm" id="bulkmail" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">${ICON.send}Email selected</button>
+    <button class="btn sm" id="bulktag" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">${ICON.tag}Tag</button>
     <button class="btn ghost sm" id="unsel" style="color:inherit">Clear</button>
     <button class="btn sm" id="bulkdel" style="margin-left:auto;background:transparent;color:#FFB4AA;border-color:#5A3A38">${ICON.trash}Delete</button></div>`;
   $("#unsel", b).onclick = () => { S.ui.sel.clear(); drawPool(v); };
   $("#bulkdel", b).onclick = () => confirmDelete([...S.ui.sel]);
   $("#bulkmail", b).onclick = () => openBulkEmail([...S.ui.sel], null);
+  $("#bulktag", b).onclick = () => openBulkTag([...S.ui.sel]);
   $("#copy", b).onclick = async () => {
     const roleId = $("#tgt", b).value; if (!roleId) return; $("#copy", b).disabled = true;
     try { const { added, skipped } = await copyToRole([...S.ui.sel], roleId); S.ui.sel.clear(); toast(`Copied ${added} to ${roleTitle(roleId)}${skipped ? `, ${skipped} already there` : ""}`); await reload(); }
@@ -1306,6 +1397,59 @@ function openEditCand(cid, after) {
   };
 }
 
+
+/* ---------- candidate tags ---------- */
+const TAG_MAX = 30;
+const allTags = () => {
+  const seen = new Map();
+  for (const c of S.cands) for (const t of c.tags || []) { const k = t.toLowerCase(); if (!seen.has(k)) seen.set(k, t); }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+};
+// Tidy a typed tag and reuse the spelling already in use ("night shift" -> "Night shift" if that exists).
+function cleanTag(raw) {
+  const t = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!t) return "";
+  return allTags().find((x) => x.toLowerCase() === t.toLowerCase()) || t;
+}
+const tagChips = (c, { max = 3 } = {}) => {
+  const tags = c.tags || []; if (!tags.length) return "";
+  return `<div class="tagrow">${tags.slice(0, max).map((t) => `<span class="ctag">${esc(t)}</span>`).join("")}${tags.length > max ? `<span class="muted small">+${tags.length - max}</span>` : ""}</div>`;
+};
+async function saveTags(cid, tags) {
+  const row = await q(sb.from("ats_candidates").update({ tags }).eq("id", cid).select().single());
+  S.cands = S.cands.map((x) => (x.id === cid ? row : x));
+  return row;
+}
+function openBulkTag(candIds, after) {
+  const list = candIds.map(candById).filter(Boolean); if (!list.length) return;
+  const m = openLayer(`<form class="modal" style="width:min(520px,100%)" novalidate>
+    <div class="dhead"><div><h2>Tag ${list.length} candidate${list.length === 1 ? "" : "s"}</h2><div class="muted small" style="margin-top:4px">Add a tag to everyone selected, or remove one.</div></div><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
+    <label class="f">Tag<input class="in" name="tag" list="alltags" maxlength="40" placeholder="e.g. Bilingual, Night shift, Strong closer" autocomplete="off"></label>
+    <datalist id="alltags">${allTags().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
+    <div class="qerr hidden" id="bterr"></div>
+    <div class="row mfoot" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn" id="btremove">Remove tag</button><button type="submit" class="btn primary" id="btadd">${ICON.tag}Add tag</button></div>
+  </form>`);
+  $$("[data-close]", m).forEach((b) => (b.onclick = closeLayer));
+  const apply = async (mode) => {
+    const tag = cleanTag(m.elements.tag.value), err = $("#bterr", m);
+    if (!tag) { err.textContent = "Type a tag."; err.classList.remove("hidden"); return; }
+    $("#btadd", m).disabled = $("#btremove", m).disabled = true;
+    let changed = 0, full = 0;
+    try {
+      for (const c of list) {
+        const cur = c.tags || [], has = cur.some((t) => t.toLowerCase() === tag.toLowerCase());
+        if (mode === "add" && !has) { if (cur.length >= TAG_MAX) { full++; continue; } await saveTags(c.id, [...cur, tag]); changed++; }
+        if (mode === "remove" && has) { await saveTags(c.id, cur.filter((t) => t.toLowerCase() !== tag.toLowerCase())); changed++; }
+      }
+      layerDirty = false; closeLayer();
+      toast(mode === "add" ? `Tagged ${changed} candidate${changed === 1 ? "" : "s"} “${tag}”${full ? ` (${full} already had ${TAG_MAX} tags)` : ""}` : `Removed “${tag}” from ${changed} candidate${changed === 1 ? "" : "s"}`);
+      await reload(); if (after) after();
+    } catch (e) { writeErr(e); $("#btadd", m).disabled = $("#btremove", m).disabled = false; }
+  };
+  m.onsubmit = (e) => { e.preventDefault(); apply("add"); };
+  $("#btremove", m).onclick = () => apply("remove");
+}
+
 /* ---------- delete candidates ---------- */
 function confirmDelete(ids, after) {
   const list = ids.map(candById).filter(Boolean); if (!list.length) return;
@@ -1462,18 +1606,19 @@ function openDrawer(cid, roleId, tab = "screen") {
   const ctxOpts = [roleId, ...others, ...(roleId ? [null] : [])];
   const d = openLayer(`<div class="drawer" role="dialog" aria-label="${esc(c.name)}">
     <div class="dhead"><div class="avatar">${esc(initials(c.name))}</div><div style="min-width:0"><h2>${esc(c.name || "Unnamed")}</h2><div class="muted">${esc([c.headline, c.location].filter(Boolean).join(", "))}</div></div>
-      <div class="x" style="display:flex;gap:4px"><button class="btn ghost sm" id="edithead" title="Edit candidate details">${ICON.edit}Edit</button><button class="btn ghost sm danger" id="delhead" title="Delete candidate">${ICON.trash}Delete</button><button class="btn ghost" data-close aria-label="Close">${ICON.x}</button></div></div>
+      <div class="x" style="display:flex;gap:4px"><button class="btn ghost sm" id="edithead" title="Edit candidate details">${ICON.edit}Edit</button>${S.isRecruiter ? `<button class="btn ghost sm danger" id="delhead" title="Delete candidate">${ICON.trash}Delete</button>` : ""}<button class="btn ghost" data-close aria-label="Close">${ICON.x}</button></div></div>
     <div class="panel" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center">
       <div><div class="muted small">Screening for</div><select class="in" id="ctx" data-nodirty style="padding:5px 8px;font-weight:700;width:auto">${ctxOpts.map((r) => `<option value="${esc(r || "")}" ${r === roleId ? "selected" : ""}>${esc(roleTitle(r))}</option>`).join("")}</select></div>
       ${stage ? `<div><div class="muted small">Stage</div><select class="in" id="stage" data-nodirty style="padding:5px 8px;width:auto">${STAGES.map((s) => `<option value="${s}" ${s === stage ? "selected" : ""}>${STAGE_LABEL[s] || s}</option>`).join("")}</select></div>` : ""}
       ${roleId && pipeFor(cid, roleId) ? `<div><div class="muted small">Email</div>${emailBadge(pipeFor(cid, roleId))}</div>` : ""}
       <button type="button" class="btn sm" id="emailbtn" style="margin-left:auto">${ICON.send}Email candidate</button>
       <div><div class="muted small">Rating</div><div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-r="${n}" class="${n <= rating ? "on" : ""}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div></div>
+      <div class="tagedit"><div class="muted small">Tags</div><div class="tagbox" id="tagbox"></div></div>
     </div>
-    <div class="tabs" style="margin-bottom:0">${[["screen", "Screening"], ["profile", "Profile"], ["cv", "CV"], ["mail", `Emails${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length ? ` (${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length})` : ""}`]].map(([k, l]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="tabs" style="margin-bottom:0">${[["screen", "Screening"], ["notes", `Notes${S.notes.filter((x) => x.candidate_id === cid).length ? ` (${S.notes.filter((x) => x.candidate_id === cid).length})` : ""}`], ["profile", "Profile"], ["cv", "CV"], ["mail", `Emails${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length ? ` (${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length})` : ""}`]].map(([k, l]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div id="tscreen" class="${tab === "screen" ? "" : "hidden"}">
       <div class="sect"><h3>Screening questions</h3><div class="stack" id="qs"></div>
-        <div class="row" style="margin-top:10px"><input class="in" id="newq" placeholder="Add a question to ${roleId ? "this role" : "talent pool screening"}" style="flex:1"><button class="btn sm" id="addq" type="button">${ICON.plus}Add</button></div></div>
+        ${S.isRecruiter ? `<div class="row" style="margin-top:10px"><input class="in" id="newq" placeholder="Add a question to ${roleId ? "this role" : "talent pool screening"}" style="flex:1"><button class="btn sm" id="addq" type="button">${ICON.plus}Add</button></div>` : ""}</div>
       <div class="sect"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Device and connectivity</h3><span id="ready"></span></div>
         <div class="grid3">
           <label class="f">Main device<select class="in" data-d="type">${["", "Laptop", "Desktop", "Other"].map((o) => `<option value="${o}" ${dev.type === o ? "selected" : ""}>${o || "Choose"}</option>`).join("")}</select></label>
@@ -1508,12 +1653,13 @@ function openDrawer(cid, roleId, tab = "screen") {
         <dt>Source</dt><dd>${c.source === "self" ? "Applied through the careers page" : "Added by a recruiter"}, ${fmtDate(c.created_at)}</dd>
         ${c.last_applied_at && ts(c.last_applied_at) - ts(c.created_at) > 60000 ? `<dt>Last applied</dt><dd>${fmtDate(c.last_applied_at)} <span class="badge">Updated their profile</span></dd>` : ""}
       </dl></div>
+      ${(c.tags || []).length ? `<div class="sect"><h3>Tags</h3>${c.tags.map((t) => `<span class="ctag">${esc(t)}</span>`).join("")}</div>` : ""}
       ${(c.skills || []).length ? `<div class="sect"><h3>Skills</h3>${c.skills.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
       ${c.note ? `<div class="sect"><h3>Why HighCall VA</h3><p style="margin:0;white-space:pre-line">${esc(c.note)}</p></div>` : ""}
       <div class="sect"><h3>Roles</h3>${candRoles(c).length ? `<div class="stack" style="gap:6px">${candRoles(c).map((r) => `<div class="row"><span style="flex:1">${esc(roleTitle(r))}</span><span class="badge">${esc(pipeFor(c.id, r)?.stage || "Applied")}</span></div>`).join("")}</div>` : `<p class="muted" style="margin:0">Talent pool only</p>`}
-        <div class="row" style="margin-top:12px"><select class="in" id="cpy" data-nodirty style="flex:1;width:auto">${S.roles.filter((r) => r.status !== "archived" && !candRoles(c).includes(r.id)).map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("") || `<option value="">No other roles</option>`}</select><button class="btn sm" id="cpybtn">Copy to role</button></div></div>
-      ${dcSection(c)}
-      <div class="sect"><button class="btn danger sm" id="del">${ICON.trash}Delete candidate</button></div>
+        ${S.isRecruiter ? `<div class="row" style="margin-top:12px"><select class="in" id="cpy" data-nodirty style="flex:1;width:auto">${S.roles.filter((r) => r.status !== "archived" && !candRoles(c).includes(r.id)).map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("") || `<option value="">No other roles</option>`}</select><button class="btn sm" id="cpybtn">Copy to role</button></div>` : ""}</div>
+      ${S.isRecruiter ? dcSection(c) : ""}
+      ${S.isRecruiter ? `<div class="sect"><button class="btn danger sm" id="del">${ICON.trash}Delete candidate</button></div>` : ""}
     </div>
     <div id="tcv" class="${tab === "cv" ? "" : "hidden"}">
       ${c.cv_path ? `<div class="row" style="margin-bottom:12px"><button class="btn" id="opencv">Open ${esc(c.cv_name || "CV")}</button><span class="muted small">Opens a private link that expires in 5 minutes.</span></div>
@@ -1522,21 +1668,73 @@ function openDrawer(cid, roleId, tab = "screen") {
         : `<div class="empty"><h3>No CV on file</h3><p>Ask the candidate to apply again with a PDF.</p></div>`}
     </div>
     <div id="tmail" class="${tab === "mail" ? "" : "hidden"}">${mailHistory(cid)}</div>
+    <div id="tnotes" class="${tab === "notes" ? "" : "hidden"}">
+      <div class="sect"><h3>Interview notes</h3>
+        <textarea class="in" id="newnote" data-nodirty style="min-height:110px" placeholder="What did you learn in the interview? Communication, experience, red flags, next steps…"></textarea>
+        <div class="row" style="margin-top:10px;justify-content:space-between"><span class="muted small">${roleId ? `Saved against ${esc(roleTitle(roleId))}` : "Saved against the talent pool"}, signed with your name and the time.</span><button type="button" class="btn primary sm" id="addnote">${ICON.note}Add note</button></div></div>
+      <div class="sect" id="notelist"></div>
+    </div>
   </div>`, { center: false });
   $("#emailbtn", d).onclick = () => openCompose(cid, roleId);
+  const drawTags = () => {
+    const cur = (candById(cid)?.tags) || [];
+    $("#tagbox", d).innerHTML = `${cur.map((t, i) => `<span class="ctag">${esc(t)}<button type="button" data-untag="${i}" aria-label="Remove tag ${esc(t)}">×</button></span>`).join("")}
+      ${cur.length < TAG_MAX ? `<input class="taginput" id="taginput" data-nodirty list="drawertags" maxlength="40" placeholder="${cur.length ? "Add tag" : "Add a tag, e.g. Bilingual"}" aria-label="Add a tag"><datalist id="drawertags">${allTags().filter((t) => !cur.some((x) => x.toLowerCase() === t.toLowerCase())).map((t) => `<option value="${esc(t)}">`).join("")}</datalist>` : `<span class="muted small">Max ${TAG_MAX} tags</span>`}`;
+    $$("[data-untag]", d).forEach((b) => (b.onclick = async () => {
+      const next = cur.filter((_, i) => i !== +b.dataset.untag);
+      try { await saveTags(cid, next); drawTags(); refresh(); } catch (e) { writeErr(e); }
+    }));
+    const inp = $("#taginput", d);
+    if (inp) {
+      const add = async () => {
+        const t = cleanTag(inp.value); if (!t) return;
+        if (cur.some((x) => x.toLowerCase() === t.toLowerCase())) { inp.value = ""; return; }
+        inp.disabled = true;
+        try { await saveTags(cid, [...cur, t]); drawTags(); refresh(); $("#taginput", d)?.focus(); } catch (e) { writeErr(e); inp.disabled = false; }
+      };
+      inp.onkeydown = (e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } };
+      inp.onchange = () => { if (allTags().some((t) => t.toLowerCase() === inp.value.trim().toLowerCase())) add(); }; // picked from suggestions
+    }
+  };
+  drawTags();
+  const who = (id) => { if (id === S.session?.user?.id) return "You"; const t = S.team.find((x) => x.user_id === id); return t ? t.name || t.email : "A teammate"; };
+  const drawNotes = () => {
+    const list = S.notes.filter((n) => n.candidate_id === cid);
+    $("#notelist", d).innerHTML = list.length ? `<div class="stack" style="gap:10px">${list.map((n) => `<div class="q" style="background:var(--surface)">
+      <div class="row" style="justify-content:space-between"><span class="small"><b style="color:var(--ink)">${esc(who(n.author_id))}</b> <span class="muted">· ${fmtDate(n.created_at)} ${new Date(n.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${n.role_id ? ` · ${esc(roleTitle(n.role_id))}` : ""}</span></span>
+        ${n.author_id === S.session?.user?.id || S.isAdmin ? `<button type="button" class="btn ghost sm danger" data-delnote="${esc(n.id)}" aria-label="Delete note">${ICON.trash}</button>` : ""}</div>
+      <div style="white-space:pre-wrap;font-size:14px;color:var(--text)">${esc(n.body)}</div></div>`).join("")}</div>`
+      : `<p class="muted" style="margin:0">No interview notes yet.</p>`;
+    $$("[data-delnote]", d).forEach((b) => (b.onclick = async () => {
+      if (!confirm("Delete this note?")) return;
+      try { await q(sb.from("ats_notes").delete().eq("id", b.dataset.delnote)); S.notes = S.notes.filter((n) => n.id !== b.dataset.delnote); drawNotes(); refresh(); } catch (e) { writeErr(e); }
+    }));
+  };
+  drawNotes();
+  $("#addnote", d).onclick = async () => {
+    const t = $("#newnote", d).value.trim(); if (!t) { $("#newnote", d).focus(); return; }
+    const b = $("#addnote", d); b.disabled = true;
+    try {
+      const pipe = roleId ? pipeFor(cid, roleId) : null;
+      const row = await q(sb.from("ats_notes").insert({ candidate_id: cid, pipeline_id: pipe?.id || null, role_id: roleId || null, body: t.slice(0, 20000), author_id: S.session.user.id }).select().single());
+      S.notes = [row, ...S.notes]; $("#newnote", d).value = ""; drawNotes(); toast("Note added"); refresh();
+    } catch (e) { writeErr(e); }
+    b.disabled = false;
+  };
   $$("[data-close]", d).forEach((b) => (b.onclick = closeLayer));
-  $$("[data-t]", d).forEach((b) => (b.onclick = () => { $$("[data-t]", d).forEach((x) => x.classList.toggle("on", x === b)); ["screen", "profile", "cv", "mail"].forEach((k) => $("#t" + k, d).classList.toggle("hidden", k !== b.dataset.t)); }));
+  $$("[data-t]", d).forEach((b) => (b.onclick = () => { $$("[data-t]", d).forEach((x) => x.classList.toggle("on", x === b)); ["screen", "notes", "profile", "cv", "mail"].forEach((k) => $("#t" + k, d).classList.toggle("hidden", k !== b.dataset.t)); }));
   $("#ctx", d).onchange = (e) => openDrawer(cid, e.target.value || null);
   const oc = $("#opencv", d); if (oc) oc.onclick = () => openCv(c);
   const answers = { ...(p.answers || {}) };
   const drawQ = () => {
-    $("#qs", d).innerHTML = qs.length ? qs.map((x) => `<div class="q"><div class="qt"><span>${esc(x.text)}</span><button type="button" class="btn ghost sm" data-qdel="${esc(x.id)}" aria-label="Remove question">${ICON.x}</button></div><textarea class="in" data-a="${esc(x.id)}" style="min-height:64px" placeholder="Candidate’s answer">${esc(answers[x.id])}</textarea></div>`).join("") : `<p class="muted" style="margin:0">No questions yet. Add one below.</p>`;
+    $("#qs", d).innerHTML = qs.length ? qs.map((x) => `<div class="q"><div class="qt"><span>${esc(x.text)}</span>${S.isRecruiter ? `<button type="button" class="btn ghost sm" data-qdel="${esc(x.id)}" aria-label="Remove question">${ICON.x}</button>` : ""}</div><textarea class="in" data-a="${esc(x.id)}" style="min-height:64px" placeholder="Candidate’s answer">${esc(answers[x.id])}</textarea></div>`).join("") : `<p class="muted" style="margin:0">No questions yet. Add one below.</p>`;
     $$("[data-a]", d).forEach((t) => (t.oninput = () => { answers[t.dataset.a] = t.value; }));
     $$("[data-qdel]", d).forEach((b) => (b.onclick = async () => { qs = qs.filter((x) => x.id !== b.dataset.qdel); drawQ(); try { await saveQuestions(roleId, qs); } catch (e) { writeErr(e); } }));
   };
   drawQ();
   const addQ = async () => { const t = $("#newq", d).value.trim(); if (!t) return; qs.push({ id: uid(), text: t }); $("#newq", d).value = ""; drawQ(); try { await saveQuestions(roleId, qs); } catch (e) { writeErr(e); } };
-  $("#addq", d).onclick = addQ; $("#newq", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addQ(); } };
+  if ($("#addq", d)) $("#addq", d).onclick = addQ;
+  if ($("#newq", d)) $("#newq", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addQ(); } };
   const drawReady = () => { const rd = readiness({ device: { ...dev, checkedAt: 1 } }, role); $("#ready", d).innerHTML = role ? `<span class="badge ${rd.cls}">${esc(rd.label)}</span>` : ""; };
   $$("[data-d]", d).forEach((el) => (el.oninput = el.onchange = () => { dev[el.dataset.d] = el.value; drawReady(); }));
   $$("[data-yn]", d).forEach((g) => $$("button", g).forEach((b) => (b.onclick = () => { const k = g.dataset.yn; dev[k] = dev[k] === b.dataset.v ? "" : b.dataset.v; $$("button", g).forEach((x) => x.classList.toggle("on", dev[k] === x.dataset.v)); drawReady(); })));
@@ -1560,7 +1758,7 @@ function openDrawer(cid, roleId, tab = "screen") {
     } catch (e) { writeErr(e); }
     b.disabled = false; b.textContent = "Save screening";
   };
-  $("#cpybtn", d).onclick = async () => { const r = $("#cpy", d).value; if (!r) return; try { await copyToRole([cid], r); toast("Copied to " + roleTitle(r)); await reload(); openDrawer(cid, roleId, "profile"); } catch (e) { writeErr(e); } };
+  if ($("#cpybtn", d)) $("#cpybtn", d).onclick = async () => { const r = $("#cpy", d).value; if (!r) return; try { await copyToRole([cid], r); toast("Copied to " + roleTitle(r)); await reload(); openDrawer(cid, roleId, "profile"); } catch (e) { writeErr(e); } };
   const todc = $("#todc", d);
   if (todc) todc.onclick = async () => {
     todc.disabled = true; todc.textContent = "Adding…";
@@ -1570,7 +1768,7 @@ function openDrawer(cid, roleId, tab = "screen") {
   const askEdit = () => { if (layerDirty && !window.confirm("Discard your unsaved screening notes?")) return; openEditCand(cid, () => openDrawer(cid, roleId, "profile")); };
   $("#edithead", d).onclick = askEdit; $("#editprof", d).onclick = askEdit;
   const askDelete = () => { if (layerDirty && !window.confirm("Discard your unsaved screening notes?")) return; confirmDelete([cid]); };
-  $("#del", d).onclick = askDelete; $("#delhead", d).onclick = askDelete;
+  if (S.isRecruiter) { $("#del", d).onclick = askDelete; $("#delhead", d).onclick = askDelete; }
   $$("[data-oldcv]", d).forEach((b) => (b.onclick = () => openCv({ cv_path: c.cv_history[+b.dataset.oldcv].path })));
 }
 
@@ -1606,14 +1804,14 @@ function viewSettings(v) {
     </div>
     <div class="card"><h3 style="font-size:17px;margin-bottom:12px">Team</h3>
       <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Email</th><th>Access</th><th></th></tr></thead><tbody>
-      ${S.team.map((t) => `<tr style="cursor:default"><td>${esc(t.name || "—")}</td><td>${esc(t.email)}</td><td>${S.isAdmin && t.user_id !== S.session.user.id ? `<select class="in" data-acc="${esc(t.user_id)}" style="padding:5px 8px;width:auto">${["admin", "recruiter", "member"].map((r) => `<option value="${r}" ${t.role === r ? "selected" : ""}>${r[0].toUpperCase() + r.slice(1)}</option>`).join("")}</select>` : esc(t.role[0].toUpperCase() + t.role.slice(1))}</td>
-        <td>${S.isAdmin && t.user_id !== S.session.user.id ? `<button class="btn ghost sm danger" data-rm="${esc(t.user_id)}">Remove</button>` : t.user_id === S.session.user.id ? `<span class="muted small">You</span>` : ""}</td></tr>`).join("")}
+      ${S.team.map((t) => `<tr style="cursor:default"><td>${esc(t.name || "—")}</td><td>${esc(t.email)}</td><td>${S.isAdmin && t.user_id !== S.session.user.id ? `<select class="in" data-acc="${esc(t.user_id)}" style="padding:5px 8px;width:auto">${["admin", "recruiter", "hr_manager", "member"].map((r) => `<option value="${r}" ${t.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>` : esc(ROLE_LABEL[t.role] || t.role)}</td>
+        <td style="white-space:nowrap;text-align:right">${S.isAdmin ? `<button class="btn ghost sm" data-pwlink="${esc(t.email)}" title="Email them a link to set a new password">${ICON.key}Password link</button>` : ""}${S.isAdmin && t.user_id !== S.session.user.id ? `<button class="btn ghost sm danger" data-rm="${esc(t.user_id)}">Remove</button>` : t.user_id === S.session.user.id ? `<span class="muted small" style="margin-left:6px">You</span>` : ""}</td></tr>`).join("")}
       </tbody></table></div>
       ${S.isAdmin ? `<form id="addstaff" class="stack" style="margin-top:16px;gap:10px" novalidate>
         <div class="grid3"><label class="f">Email<input class="in" name="email" type="email" required></label><label class="f">Name<input class="in" name="name"></label>
-        <label class="f">Access<select class="in" name="role"><option value="recruiter">Recruiter</option><option value="member">Member</option><option value="admin">Admin</option></select></label></div>
-        <div class="row"><button class="btn primary">Add to team</button><span class="muted small">They need an HCVA login first. DeviceCare logins work.</span></div></form>
-        <p class="muted small" style="margin:14px 0 0">Admins manage the team. Recruiters manage roles, the talent pool and screening. Members see internal roles on the careers page and can apply.</p>` : `<p class="muted small" style="margin:12px 0 0">Ask an admin to add or change team members.</p>`}
+        <label class="f">Access<select class="in" name="role"><option value="recruiter">Recruiter</option><option value="hr_manager">HR Manager</option><option value="member">Member</option><option value="admin">Admin</option></select></label></div>
+        <div class="row"><button class="btn primary" id="addstaffbtn">${ICON.plus}Add to team</button><span class="muted small">New people get an email with a link to set their password. Existing HCVA logins (like DeviceCare users) get access right away.</span></div></form>
+        <p class="muted small" style="margin:14px 0 0"><b>Admins</b> manage everything, including the team. <b>Recruiters</b> manage roles, the talent pool, screening and emails. <b>HR Managers</b> run interviews: they see role pipelines and the Interviews page, move candidates through stages, rate them, take interview notes and email them. <b>Members</b> see internal roles on the careers page and can apply.</p>` : `<p class="muted small" style="margin:12px 0 0">Ask an admin to add or change team members.</p>`}
     </div>
   </div>`;
   const draw = () => {
@@ -1651,10 +1849,28 @@ function viewSettings(v) {
   };
   const as = $("#addstaff", v);
   if (as) as.onsubmit = async (e) => {
-    e.preventDefault(); const f = e.target;
-    try { await q(sb.rpc("ats_add_staff", { p_email: f.email.value.trim(), p_role: f.role.value, p_name: f.name.value.trim() || null })); toast("Added to team"); S.ui.redrawSettings = true; await reload(); }
-    catch (ex) { toast(ex?.message || "Couldn’t add that person."); }
+    e.preventDefault(); const f = e.target, btn = $("#addstaffbtn", v);
+    const email = f.email.value.trim().toLowerCase(), name = f.name.value.trim(), role = f.role.value;
+    if (!/^\S+@\S+\.\S+$/.test(email)) { toast("Enter a valid email."); return; }
+    btn.disabled = true;
+    try {
+      const r = await callAccountFn({ action: "add", email, name, role });
+      toast(r.warning ? r.warning : r.existed ? `${name || email} now has ${ROLE_LABEL[role]} access. We emailed them.` : `${name || email} was added. We emailed them a link to set their password.`);
+      S.ui.redrawSettings = true; await reload();
+    } catch (ex) {
+      if (ex.notDeployed) { // fallback: works for people who already have an HCVA login
+        try { await q(sb.rpc("ats_add_staff", { p_email: email, p_role: role, p_name: name || null })); toast("Added to team. (Deploy the account service to create new logins and send emails.)"); S.ui.redrawSettings = true; await reload(); }
+        catch (e2) { toast(e2?.message || ex.message); }
+      } else toast(ex.message);
+    }
+    btn.disabled = false;
   };
+  $$("[data-pwlink]", v).forEach((b) => (b.onclick = async () => {
+    if (!confirm(`Email ${b.dataset.pwlink} a link to set a new password?`)) return;
+    b.disabled = true;
+    try { await callAccountFn({ action: "reset", email: b.dataset.pwlink }); toast(`Password link sent to ${b.dataset.pwlink}`); } catch (e) { toast(e.message); }
+    b.disabled = false;
+  }));
   $$("[data-acc]", v).forEach((s) => (s.onchange = async () => { try { await q(sb.from("ats_staff").update({ role: s.value }).eq("user_id", s.dataset.acc)); toast("Access updated"); S.ui.redrawSettings = true; await reload(); } catch (e) { writeErr(e); } }));
   $$("[data-rm]", v).forEach((b) => (b.onclick = async () => { try { await q(sb.from("ats_staff").delete().eq("user_id", b.dataset.rm)); toast("Removed from team"); S.ui.redrawSettings = true; await reload(); } catch (e) { writeErr(e); } }));
 }
@@ -1708,14 +1924,23 @@ async function start() {
     if (event === "PASSWORD_RECOVERY") { S.recovery = true; if (booted) setTimeout(() => { S.session = s; mounted = null; route(); }, 0); return; }
     if (!booted || (event !== "SIGNED_IN" && event !== "SIGNED_OUT")) return;
     if (event === "SIGNED_OUT" && signingOut) return; // our own sign-out handles the page
-    if (event === "SIGNED_IN") S.justSignedOut = false;
+    if (event === "SIGNED_IN") { S.justSignedOut = false; S.linkError = false; }
     if ((s?.user?.id || null) === (S.session?.user?.id || null)) return;
     setTimeout(async () => { S.ready = false; mounted = null; refresh(); await setSession(s); await loadAll(); mounted = null; route(); }, 0);
   });
   const { data: { session } } = await sb.auth.getSession();
   const params = new URLSearchParams(location.search);
   if (params.has("recovery")) { if (session) S.recovery = true; history.replaceState(null, "", location.pathname + location.hash); }
-  await setSession(session); await loadAll();
+  let activeSession = session;
+  if (params.has("setpw")) {
+    const token = params.get("setpw");
+    history.replaceState(null, "", location.pathname);
+    if (activeSession) { await sb.auth.signOut({ scope: "local" }); activeSession = null; }
+    const { data, error } = await sb.auth.verifyOtp({ token_hash: token, type: "recovery" });
+    if (!error && data?.session) { activeSession = data.session; S.recovery = true; }
+    else { S.linkError = true; location.hash = "login"; }
+  }
+  await setSession(activeSession); await loadAll();
   booted = true; route();
 }
 start();
