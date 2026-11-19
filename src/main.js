@@ -9,9 +9,22 @@ import { sb, configured } from "./supabase.js";
 import { searchList } from "./search.js";
 
 const ROLE_LABEL = { admin: "Admin", recruiter: "Recruiter", hr_manager: "HR Manager", member: "Member" };
-const STAGES = ["Sourced", "Applied", "Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Withdrawn"];
-// Rejected = HighCall VA decided not to continue. Withdrawn = the candidate declined or pulled out.
-const STAGE_LABEL = { Rejected: "Rejected (our decision)", Withdrawn: "Withdrawn (candidate declined or pulled out)" };
+// Hiring stages. Sourced and Applied are where candidates start; Withdrawn = the candidate declined or pulled out.
+const STAGES = ["Sourced", "Applied", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Offered", "Hired", "Rejected", "Withdrawn"];
+// Plain "Shortlisted" comes from before the shortlist categories existed; recruiters pick a category for it.
+const LEGACY_STAGES = ["Shortlisted"];
+const STAGE_LABEL = {
+  Shortlisted: "Shortlisted (choose a category)",
+  Applied: "Applied (email, sent automatically for careers page applications)",
+  "Shortlisted: Healthcare": "Shortlisted: No Med VA experience - With Healthcare Background",
+  "Shortlisted: Med VA": "Shortlisted: With Med VA experience - Not from Healthcare Background",
+  "Initial Interview": "Initial Interview (email)", "HR Interview": "HR Interview (email)",
+  "Post HR: Moderate": "Post HR Interview: Moderate matching probability",
+  "Post HR: Very High": "Post HR Interview: Very high matching probability",
+  Offered: "Offered (email)", Hired: "Hired (email)", Rejected: "Rejected: our decision (email)", Withdrawn: "Withdrawn: candidate declined or pulled out",
+};
+const STAGE_SHORT = { Shortlisted: "Shortlisted (pick category)", "Shortlisted: Healthcare": "Shortlisted · Healthcare background", "Shortlisted: Med VA": "Shortlisted · Med VA experience", "Post HR: Moderate": "Post HR · Moderate", "Post HR: Very High": "Post HR · Very high" };
+const stageShort = (st) => STAGE_SHORT[st] || st || "Applied";
 const CLOSED = ["Hired", "Rejected", "Withdrawn"];
 const APP_NAME = "HighCall Careers"; // product name in the sidebar, like "DeviceCare"
 const STATUS_LABEL = { draft: "Draft", public: "Public", internal: "Internal", archived: "Archived" };
@@ -121,7 +134,7 @@ async function loadAll() {
     const [settings, roles, cands, pipes, templates, team, mailTemplates, notes, emails] = await Promise.all(jobs);
     S.settings = Object.fromEntries((settings || []).map((r) => [r.key, r.value]));
     S.roles = roles || [];
-    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || []; S.mailTemplates = mailTemplates || []; S.notes = notes || []; S.emails = emails || [];
+    S.cands = cands || []; S.pipes = pipes || []; S.templates = templates || []; S.team = team || []; S.mailTemplates = mailTemplates || []; S.notes = notes || []; S.emails = emails || []; S.wdFrom = null;
   } catch (e) { console.error(e); S.loadError = "Couldn’t load data. Check your connection and refresh."; }
   S.ready = true;
 }
@@ -250,7 +263,7 @@ function authOpen() {
           <path class="journey" d="M 402 650 A 370 370 0 0 0 600 894"/>
         </svg>
         ${card("c1", "MS", "Applied", "")}
-        ${card("c2", "JD", "Interview", "mid")}
+        ${card("c2", "JD", "HR interview", "mid")}
         ${card("c3", "AR", "Hired ✓", "hired")}
       </div>
       <div class="brand"><img src="${LOGO}" alt="HighCall VA"><div><b>${APP_NAME}</b><span>HighCall Virtual Assistants</span></div></div>
@@ -554,11 +567,13 @@ function openApply(roleId) {
       if (!m.elements.website.value) {
         const cv = await uploadCv(file, "applications");
         await q(sb.rpc("ats_submit_application", { p_role: roleId || null, p_data: { ...vals, ...cv } }));
+        // Ask the server to send the automatic "Application received" email (it checks the application is real).
+        sb.functions.invoke("ats-send-email", { body: { action: "application_received", email: vals.email, role_id: roleId || null } }).catch(() => {});
       }
       rememberApplied(roleId);
       layerDirty = false;
       m.innerHTML = `<div class="done"><img src="${LOGO}" alt="" style="width:110px;margin-bottom:14px"><h2>${job ? "Application sent" : "You’re in the talent pool"}</h2>
-        <p class="muted">${job ? `We received your application for ${esc(job.title)}. Our recruiters will email you about next steps.` : "Our recruiters will reach out when a role matches your profile."}</p>
+        <p class="muted">${job ? `We received your application for ${esc(job.title)}. A confirmation email is on its way to ${esc(vals.email)}, and our recruiters will email you about next steps.` : "Our recruiters will reach out when a role matches your profile."}</p>
         <button class="btn primary" type="button" data-close>Done</button></div>`;
       $$("[data-close]", m).forEach((b) => (b.onclick = () => { closeLayer(); refresh(); }));
     } catch (ex) {
@@ -624,7 +639,7 @@ function statCard(label, value, cap, icon, tone = "", goTo = "") {
 function drawDash(box, d) {
   const per = periodLabel(d.period), n = (k) => Number(d[k] || 0);
   const f = d.funnel || {}, entered = n("entered");
-  const funnel = [["Entered pipeline", entered], ["Shortlisted", +f.Shortlisted || 0], ["Screening", +f.Screening || 0], ["Interview", +f.Interview || 0], ["Offer", +f.Offer || 0], ["Hired", n("hired")]];
+  const funnel = [["Entered pipeline", entered], ["Shortlisted", +f.Shortlisted || 0], ["Initial interview", +f["Initial Interview"] || 0], ["HR interview", +f["HR Interview"] || 0], ["Post HR interview", +f["Post HR Interview"] || 0], ["Offered", +f.Offered || 0], ["Hired", n("hired")]];
   const fmax = Math.max(1, ...funnel.map((x) => x[1]));
   const trend = d.trend || [], tmax = Math.max(1, ...trend.map((t) => Math.max(t.applied, t.hired)));
   const mon = (ym) => new Date(ym + "-01T00:00:00").toLocaleDateString("en-US", { month: "short" });
@@ -635,9 +650,10 @@ function drawDash(box, d) {
   const decided = n("hired") + (+o.offer_declined || 0);
   const accRate = decided ? Math.round((n("hired") / decided) * 100) + "%" : "–";
   const losses = [
-    ["Rejected before screening", +o.rejected_before_screening || 0, "Rejected from Sourced, Applied or Shortlisted"],
-    ["Failed screening", +o.failed_screening || 0, "Rejected from Screening"],
-    ["Failed interview", +o.failed_interview || 0, "Rejected from Interview"],
+    ["Rejected before interview", +o.rejected_before_interview || 0, "Rejected from Sourced, Applied or Shortlisted"],
+    ["Failed initial interview", +o.failed_initial_interview || 0, "Rejected from Initial Interview"],
+    ["Failed HR interview", +o.failed_hr_interview || 0, "Rejected from HR Interview"],
+    ["Rejected after HR interview", +o.rejected_after_post_hr || 0, "Rejected from a Post HR Interview stage"],
     ["Rejected after offer", +o.rejected_after_offer || 0, "Offer withdrawn by HighCall VA"],
     ["Withdrew before offer", +o.withdrew_before_offer || 0, "Candidate pulled out before an offer"],
     ["Declined offer", +o.offer_declined || 0, "Candidate turned down the offer"],
@@ -699,8 +715,34 @@ function drawDash(box, d) {
   </div>`;
   $$("[data-go]", box).forEach((el) => (el.onclick = () => go(el.dataset.go)));
   $$("[data-mail]", box).forEach((el) => (el.onclick = () => { const [cid, rid] = el.dataset.mail.split("|"); openCompose(cid, rid); }));
+  // Waiting for an email: mark as already emailed (one or many) to clear them from the list
+  const wsel = new Set();
+  const drawWbar = () => {
+    const bar = $("#wbar", box); if (!bar) return;
+    bar.innerHTML = wsel.size ? `<div class="bulk" style="position:static;margin:0 20px 12px"><b>${wsel.size} selected</b><button class="btn go sm" id="wmark">${ICON.check}Mark ${wsel.size === 1 ? "as" : "all as"} emailed</button><button class="btn ghost sm" id="wclear" style="color:inherit">Clear</button></div>` : "";
+    const wm = $("#wmark", bar); if (wm) wm.onclick = () => markAsEmailed([...wsel]);
+    const wc = $("#wclear", bar); if (wc) wc.onclick = () => { wsel.clear(); $$("[data-wsel]", box).forEach((x) => (x.checked = false)); const wa = $("#wall", box); if (wa) wa.checked = false; drawWbar(); };
+  };
+  $$("[data-wsel]", box).forEach((cb) => (cb.onchange = () => { cb.checked ? wsel.add(cb.dataset.wsel) : wsel.delete(cb.dataset.wsel); drawWbar(); }));
+  const wall = $("#wall", box); if (wall) wall.onchange = () => { $$("[data-wsel]", box).forEach((cb) => { cb.checked = wall.checked; wall.checked ? wsel.add(cb.dataset.wsel) : wsel.delete(cb.dataset.wsel); }); drawWbar(); };
+  $$("[data-markone]", box).forEach((b) => (b.onclick = () => markAsEmailed([b.dataset.markone])));
   $$("[data-who]", box).forEach((el) => (el.onclick = () => { const [cid, rid] = el.dataset.who.split("|"); openDrawer(cid, rid); }));
   const n2 = $("#dnew2", box); if (n2) n2.onclick = () => openRoleEditor();
+}
+
+
+// Record that candidates were already emailed (or told another way), so they leave "Waiting for an email".
+async function markAsEmailed(pipeIds) {
+  if (!pipeIds.length) return;
+  const names = pipeIds.map((id) => candById(S.pipes.find((p) => p.id === id)?.candidate_id)?.name).filter(Boolean);
+  if (!confirm(pipeIds.length === 1 ? `Mark ${names[0] || "this candidate"} as already emailed? They’ll be removed from this list.` : `Mark ${pipeIds.length} candidates as already emailed? They’ll be removed from this list.`)) return;
+  const by = S.staff?.name || S.session?.user?.email || "a teammate";
+  let done = 0;
+  try {
+    for (const id of pipeIds) { await q(sb.rpc("ats_mark_emailed", { p_pipeline_id: id, p_note: `Marked as already emailed by ${by}` })); done++; }
+    toast(`${done} marked as emailed`);
+  } catch (e) { writeErr(e); if (done) toast(`${done} marked as emailed before the error`); }
+  await reload();
 }
 
 function sentInPeriod(d, userId) {
@@ -712,40 +754,63 @@ function mailPanel(d) {
   return `<div class="panel" style="margin-bottom:30px">
     <div class="cardhead"><div><h2>Waiting for an email ${list.length ? `<span class="badge bad" style="vertical-align:middle;margin-left:6px">${list.length}</span>` : ""}</h2>
       <p>Candidates who moved forward or were rejected but haven’t been emailed yet. ${sent} email${sent === 1 ? "" : "s"} sent ${per}.</p></div></div>
-    ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Moved to</th><th>Waiting</th><th></th></tr></thead><tbody>
-      ${list.slice(0, 10).map((p) => { const c = candById(p.candidate_id); return `<tr><td class="who"><a href="#" data-who="${esc(c.id)}|${esc(p.role_id)}" style="text-decoration:none"><b>${esc(c.name)}</b></a><span>${esc(c.email || "No email on file")}</span></td>
-        <td>${esc(roleTitle(p.role_id))}</td><td><span class="badge ${p.stage === "Rejected" ? "bad" : p.stage === "Hired" ? "ok" : ""}">${esc(p.stage)}</span></td>
+    ${list.length ? `<div class="wbar" id="wbar"></div><div class="table-wrap"><table class="t"><thead><tr><th class="cb"><input type="checkbox" id="wall" aria-label="Select all shown"></th><th>Candidate</th><th>Role</th><th>Moved to</th><th>Waiting</th><th></th></tr></thead><tbody>
+      ${list.slice(0, 25).map((p) => { const c = candById(p.candidate_id); return `<tr><td class="cb"><input type="checkbox" data-wsel="${esc(p.id)}" aria-label="Select ${esc(c.name)}"></td><td class="who"><a href="#" data-who="${esc(c.id)}|${esc(p.role_id)}" style="text-decoration:none"><b>${esc(c.name)}</b></a><span>${esc(c.email || "No email on file")}</span></td>
+        <td>${esc(roleTitle(p.role_id))}</td><td><span class="badge ${p.stage === "Rejected" ? "bad" : p.stage === "Hired" ? "ok" : ""}">${esc(stageShort(p.stage))}</span></td>
         <td><span class="badge bad"><span class="dot"></span>${ago(p.stage_changed_at)}</span></td>
-        <td style="text-align:right"><button class="btn sm primary" data-mail="${esc(c.id)}|${esc(p.role_id)}">${ICON.send}Email</button></td></tr>`; }).join("")}
-    </tbody></table></div>${list.length > 10 ? `<p class="muted small" style="padding:12px 20px;margin:0">and ${list.length - 10} more. Open each role to see everyone.</p>` : ""}`
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" data-markone="${esc(p.id)}" title="Already emailed or told another way">${ICON.check}Mark as emailed</button> <button class="btn sm primary" data-mail="${esc(c.id)}|${esc(p.role_id)}">${ICON.send}Email</button></td></tr>`; }).join("")}
+    </tbody></table></div>${list.length > 25 ? `<p class="muted small" style="padding:12px 20px;margin:0">and ${list.length - 25} more. Open each role to see everyone.</p>` : ""}`
     : `<div class="empty" style="padding:30px 20px"><p style="margin:0">Everyone has been told about their latest stage.</p></div>`}
   </div>`;
 }
 
 
 /* ---------- interviews (HR managers, recruiters, admins) ---------- */
-const INTERVIEW_TABS = [["Interview", "Interviewing"], ["Offer", "Offer stage"], ["active", "All in progress"]];
+const INTERVIEW_TABS = [["Initial Interview", "Initial interview"], ["HR Interview", "HR interview"], ["posthr", "Post HR interview"], ["Offered", "Offered"], ["active", "All in progress"], ["Withdrawn", "Withdrawn"]];
+const ivMatch = (tab, st) => tab === "active" || (tab === "posthr" ? st === "Post HR: Moderate" || st === "Post HR: Very High" : st === tab);
 function viewInterviews(v) {
-  if (!S.ui.ivTab) S.ui.ivTab = "Interview";
+  if (!S.ui.ivTab) S.ui.ivTab = S.isHR ? "HR Interview" : "Initial Interview";
   const open = new Set(S.roles.filter((r) => r.status === "public" || r.status === "internal").map((r) => r.id));
-  const inProgress = (p) => p.role_id && open.has(p.role_id) && candById(p.candidate_id) && ["Shortlisted", "Screening", "Interview", "Offer"].includes(p.stage);
+  const inProgress = (p) => p.role_id && open.has(p.role_id) && candById(p.candidate_id) && ["Shortlisted", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Offered"].includes(p.stage);
   const all = S.pipes.filter(inProgress);
-  const count = (k) => all.filter((p) => k === "active" || p.stage === k).length;
-  const list = all.filter((p) => S.ui.ivTab === "active" || p.stage === S.ui.ivTab).sort((a, b) => ts(a.stage_changed_at || a.updated_at) - ts(b.stage_changed_at || b.updated_at));
+  // Withdrawn: everyone who pulled out, across all roles (open or closed). No email is needed.
+  const withdrawn = S.pipes.filter((p) => p.role_id && p.stage === "Withdrawn" && candById(p.candidate_id) && roleById(p.role_id))
+    .sort((a, b) => ts(b.stage_changed_at || b.updated_at) - ts(a.stage_changed_at || a.updated_at));
+  const isWd = S.ui.ivTab === "Withdrawn";
+  const count = (k) => (k === "Withdrawn" ? withdrawn.length : all.filter((p) => ivMatch(k, p.stage)).length);
+  const list = isWd ? withdrawn : all.filter((p) => ivMatch(S.ui.ivTab, p.stage)).sort((a, b) => ts(a.stage_changed_at || a.updated_at) - ts(b.stage_changed_at || b.updated_at));
   const lastNote = (p) => S.notes.find((n) => n.candidate_id === p.candidate_id && (!n.role_id || n.role_id === p.role_id));
-  v.innerHTML = `${pageHead("Interview stage", "Interviews", "Candidates you’re interviewing across open roles. Open someone to take notes, rate them and move them on.")}
+  const noteCell = (p) => { const n = lastNote(p); return `<td class="small" style="max-width:280px">${n ? `<span class="muted">${fmtDate(n.created_at)}:</span> ${esc(n.body.slice(0, 90))}${n.body.length > 90 ? "…" : ""}` : `<span class="muted">No notes yet</span>`}</td>`; };
+  const fromStage = (p) => (S.wdFrom && S.wdFrom[p.id]) ? stageShort(S.wdFrom[p.id]) : S.wdFrom ? "—" : "…";
+  v.innerHTML = `${pageHead("Interview stages", "Interviews", isWd ? "Candidates who declined or pulled out, across all roles. Add a note to record why." : "Candidates in interviews across open roles. Open someone to take notes, rate them and move them on.")}
   <div class="tabs">${INTERVIEW_TABS.map(([k, l]) => `<button data-iv="${k}" class="${S.ui.ivTab === k ? "on" : ""}">${l}<span class="n">${count(k)}</span></button>`).join("")}</div>
-  <div class="panel table-wrap">${list.length ? `<table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Stage</th><th>In stage since</th><th>Email</th><th>Latest note</th></tr></thead><tbody>
-    ${list.map((p) => { const c = candById(p.candidate_id), n = lastNote(p); return `<tr data-iv-c="${esc(c.id)}" data-iv-r="${esc(p.role_id)}" style="cursor:pointer">
-      <td class="who"><b>${esc(c.name)}</b><span>${esc(c.headline || c.email || "")}</span></td>
-      <td>${esc(roleTitle(p.role_id))}</td>
-      <td><span class="badge">${esc(p.stage)}</span></td>
-      <td class="muted">${ago(p.stage_changed_at || p.updated_at)}</td>
-      <td>${emailBadge(p, { short: true })}</td>
-      <td class="small" style="max-width:280px">${n ? `<span class="muted">${fmtDate(n.created_at)}:</span> ${esc(n.body.slice(0, 90))}${n.body.length > 90 ? "…" : ""}` : `<span class="muted">No notes yet</span>`}</td></tr>`; }).join("")}
-  </tbody></table>` : `<div class="empty">${ICON.mic}<h3>No one here right now</h3><p>${S.ui.ivTab === "Interview" ? "When a candidate is moved to the Interview stage, they appear here." : "Candidates at this stage appear here."}</p></div>`}</div>`;
+  <div class="panel table-wrap">${list.length ? (isWd
+    ? `<table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Withdrew at</th><th>Withdrew</th><th>Latest note</th></tr></thead><tbody>
+      ${list.map((p) => { const c = candById(p.candidate_id), r = roleById(p.role_id); return `<tr data-iv-c="${esc(c.id)}" data-iv-r="${esc(p.role_id)}" style="cursor:pointer">
+        <td class="who"><b>${esc(c.name)}</b><span>${esc(c.headline || c.email || "")}</span>${tagChips(c)}</td>
+        <td>${esc(r.title)}${r.status === "archived" ? ` <span class="muted small">(archived)</span>` : ""}</td>
+        <td><span class="badge draft">${esc(fromStage(p))}</span></td>
+        <td class="muted">${ago(p.stage_changed_at || p.updated_at)}</td>${noteCell(p)}</tr>`; }).join("")}
+    </tbody></table>`
+    : `<table class="t"><thead><tr><th>Candidate</th><th>Role</th><th>Stage</th><th>In stage since</th><th>Email</th><th>Latest note</th></tr></thead><tbody>
+      ${list.map((p) => { const c = candById(p.candidate_id); return `<tr data-iv-c="${esc(c.id)}" data-iv-r="${esc(p.role_id)}" style="cursor:pointer">
+        <td class="who"><b>${esc(c.name)}</b><span>${esc(c.headline || c.email || "")}</span>${tagChips(c)}</td>
+        <td>${esc(roleTitle(p.role_id))}</td>
+        <td><span class="badge">${esc(stageShort(p.stage))}</span></td>
+        <td class="muted">${ago(p.stage_changed_at || p.updated_at)}</td>
+        <td>${emailBadge(p, { short: true })}</td>${noteCell(p)}</tr>`; }).join("")}
+    </tbody></table>`)
+    : `<div class="empty">${ICON.mic}<h3>No one here right now</h3><p>${isWd ? "When a candidate is moved to Withdrawn, they appear here." : "When a candidate is moved to this stage, they appear here."}</p></div>`}</div>`;
   $$("[data-iv]", v).forEach((b) => (b.onclick = () => { S.ui.ivTab = b.dataset.iv; viewInterviews(v); }));
   $$("[data-iv-c]", v).forEach((tr) => (tr.onclick = () => openDrawer(tr.dataset.ivC, tr.dataset.ivR, "notes")));
+  // Which stage each person withdrew from comes from the stage history (loaded once, when this tab is opened).
+  if (isWd && withdrawn.length && !S.wdFrom && !S.wdLoading) {
+    S.wdLoading = true;
+    q(sb.from("ats_pipeline_events").select("pipeline_id,from_stage,created_at").eq("to_stage", "Withdrawn").order("created_at", { ascending: false }).limit(5000))
+      .then((rows) => { const m = {}; for (const r of rows || []) if (!(r.pipeline_id in m)) m[r.pipeline_id] = r.from_stage; S.wdFrom = m; })
+      .catch(() => { S.wdFrom = {}; })
+      .finally(() => { S.wdLoading = false; if (S.ui.route === "interviews" && S.ui.ivTab === "Withdrawn") viewInterviews(v); });
+  }
 }
 
 /* ---------- account: change password, password emails ---------- */
@@ -913,7 +978,8 @@ function viewRole(v, id) {
   $("#frompool", v).onclick = () => { S.ui.targetRole = role.id; go("pool"); };
   }
   const counts = Object.fromEntries(STAGES.map((s) => [s, 0])); es.forEach((e) => (counts[e.stage] = (counts[e.stage] || 0) + 1));
-  $("#pstrip", v).innerHTML = [["all", "All", es.length], ...STAGES.map((s) => [s, s, counts[s]])].map(([k, l, n]) => `<button data-st="${k}" class="${S.ui.stage === k ? "on" : ""}"><div class="k">${l}</div><div class="v">${n}</div></button>`).join("");
+  const stripStages = STAGES.flatMap((s) => (s === "Applied" ? ["Applied", ...LEGACY_STAGES.filter((x) => counts[x])] : [s]));
+  $("#pstrip", v).innerHTML = [["all", "All", es.length], ...stripStages.map((s) => [s, stageShort(s), counts[s] || 0])].map(([k, l, n]) => `<button data-st="${k}" class="${S.ui.stage === k ? "on" : ""}"><div class="k">${l}</div><div class="v">${n}</div></button>`).join("");
   $$("#pstrip button", v).forEach((b) => (b.onclick = () => { S.ui.stage = b.dataset.st; viewRole(v, id); }));
   drawRoleList(v, id);
 }
@@ -929,7 +995,7 @@ function drawRoleList(v, id) {
   $("#rlist", v).innerHTML = list.length ? `<table class="t"><thead><tr><th class="cb"><input type="checkbox" id="rall" ${allOn ? "checked" : ""} aria-label="Select all shown"></th><th>Candidate</th><th>Stage</th><th>Email</th><th>Setup</th><th>Rating</th><th>Added</th></tr></thead><tbody>
     ${list.map((e) => { const c = e.cand, rd = readiness(c, role), rt = e.pipe.rating || 0;
       return `<tr data-c="${esc(c.id)}"><td class="cb"><input type="checkbox" data-rsel="${esc(c.id)}" ${S.ui.rsel.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}"></td><td class="who"><b>${esc(c.name || "Unnamed")}</b><span>${esc(c.headline || c.email || "")}</span>${tagChips(c)}</td>
-      <td><span class="badge ${e.stage === "Hired" ? "ok" : e.stage === "Rejected" ? "bad" : e.stage === "Withdrawn" ? "draft" : ""}">${e.stage}</span>${e.stage === "Hired" ? (c.va_person_id ? ` <span class="muted small">In DeviceCare</span>` : ` <span class="muted small">Not in DeviceCare yet</span>`) : ""}</td>
+      <td><span class="badge ${e.stage === "Hired" ? "ok" : e.stage === "Rejected" ? "bad" : e.stage === "Withdrawn" ? "draft" : ""}">${esc(stageShort(e.stage))}</span>${e.stage === "Hired" ? (c.va_person_id ? ` <span class="muted small">In DeviceCare</span>` : ` <span class="muted small">Not in DeviceCare yet</span>`) : ""}</td>
       <td>${emailBadge(e.pipe, { short: true })}</td>
       <td><span class="badge ${rd.cls}">${esc(rd.label)}</span></td>
       <td>${rt ? `<span style="color:#E2B007">${"★".repeat(rt)}</span><span style="color:var(--line)">${"★".repeat(5 - rt)}</span>` : `<span class="muted">Not rated</span>`}</td>
@@ -1478,8 +1544,8 @@ function confirmDelete(ids, after) {
 
 /* ---------- candidate emails ---------- */
 // Moving someone into one of these stages means they should hear from us.
-const NOTIFY_STAGES = ["Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected"];
-const TEMPLATE_PURPOSES = ["Outreach", "Shortlisted", "Screening", "Interview", "Offer", "Hired", "Rejected", "Other"];
+const NOTIFY_STAGES = ["Applied", "Initial Interview", "HR Interview", "Offered", "Hired", "Rejected"];
+const TEMPLATE_PURPOSES = ["Outreach", "Applied", "Initial Interview", "HR Interview", "Offered", "Hired", "Rejected", "Other"];
 const PLACEHOLDERS = [["{{first_name}}", "Candidate’s first name"], ["{{full_name}}", "Candidate’s full name"], ["{{role}}", "Role title"], ["{{recruiter_name}}", "Your name"], ["{{recruiter_email}}", "Your email"]];
 /** null = no email expected for this stage; {needed:true} = red; {ok:true, at} = green */
 function emailState(pipe) {
@@ -1491,7 +1557,7 @@ function emailState(pipe) {
 function emailBadge(pipe, { short = false } = {}) {
   const st = emailState(pipe);
   if (!st) return `<span class="muted small">No email needed</span>`;
-  if (st.needed) return `<span class="badge bad"><span class="dot"></span>${short ? "Email needed" : `Email needed: ${esc(pipe.stage)}`}</span>`;
+  if (st.needed) return `<span class="badge bad"><span class="dot"></span>${short ? "Email needed" : `Email needed: ${esc(stageShort(pipe.stage))}`}</span>`;
   return `<span class="badge ok"><span class="dot"></span>${st.manual ? "Marked emailed" : "Emailed"} ${fmtDate(st.at)}</span>`;
 }
 const waitingForEmail = () => S.pipes.filter((p) => emailState(p)?.needed && candById(p.candidate_id) && roleById(p.role_id)).sort((a, b) => ts(a.stage_changed_at) - ts(b.stage_changed_at));
@@ -1568,7 +1634,7 @@ function mailHistory(cid) {
   return `<div class="stack" style="gap:10px">${list.map((e) => `<div class="q" style="background:var(--surface)">
     <div class="row" style="justify-content:space-between"><b style="color:var(--ink)">${esc(e.subject)}</b>
       ${e.status === "sent" ? `<span class="badge ok">Sent</span>` : e.status === "manual" ? `<span class="badge">Told another way</span>` : e.status === "failed" ? `<span class="badge bad">Failed</span>` : `<span class="badge warn">Sending</span>`}</div>
-    <div class="muted small">${fmtDate(e.created_at)} ${new Date(e.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${esc(who(e.sent_by))}${e.role_id ? ` · ${esc(roleTitle(e.role_id))}` : ""}${e.stage ? ` · ${esc(e.stage)}` : ""}${e.status !== "manual" && e.to_email ? ` · to ${esc(e.to_email)}` : ""}</div>
+    <div class="muted small">${fmtDate(e.created_at)} ${new Date(e.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${esc(who(e.sent_by))}${e.role_id ? ` · ${esc(roleTitle(e.role_id))}` : ""}${e.stage ? ` · ${esc(stageShort(e.stage))}` : ""}${e.status !== "manual" && e.to_email ? ` · to ${esc(e.to_email)}` : ""}</div>
     ${e.status === "failed" && e.error ? `<div class="small" style="color:var(--bad)">${esc(e.error)}</div>` : ""}
   </div>`).join("")}</div>`;
 }
@@ -1609,7 +1675,7 @@ function openDrawer(cid, roleId, tab = "screen") {
       <div class="x" style="display:flex;gap:4px"><button class="btn ghost sm" id="edithead" title="Edit candidate details">${ICON.edit}Edit</button>${S.isRecruiter ? `<button class="btn ghost sm danger" id="delhead" title="Delete candidate">${ICON.trash}Delete</button>` : ""}<button class="btn ghost" data-close aria-label="Close">${ICON.x}</button></div></div>
     <div class="panel" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center">
       <div><div class="muted small">Screening for</div><select class="in" id="ctx" data-nodirty style="padding:5px 8px;font-weight:700;width:auto">${ctxOpts.map((r) => `<option value="${esc(r || "")}" ${r === roleId ? "selected" : ""}>${esc(roleTitle(r))}</option>`).join("")}</select></div>
-      ${stage ? `<div><div class="muted small">Stage</div><select class="in" id="stage" data-nodirty style="padding:5px 8px;width:auto">${STAGES.map((s) => `<option value="${s}" ${s === stage ? "selected" : ""}>${STAGE_LABEL[s] || s}</option>`).join("")}</select></div>` : ""}
+      ${stage ? `<div><div class="muted small">Stage</div><select class="in" id="stage" data-nodirty style="padding:5px 8px;width:auto">${STAGES.flatMap((x) => (x === "Applied" && LEGACY_STAGES.includes(stage) ? ["Applied", stage] : [x])).map((s) => `<option value="${s}" ${s === stage ? "selected" : ""}>${STAGE_LABEL[s] || s}</option>`).join("")}</select></div>` : ""}
       ${roleId && pipeFor(cid, roleId) ? `<div><div class="muted small">Email</div>${emailBadge(pipeFor(cid, roleId))}</div>` : ""}
       <button type="button" class="btn sm" id="emailbtn" style="margin-left:auto">${ICON.send}Email candidate</button>
       <div><div class="muted small">Rating</div><div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-r="${n}" class="${n <= rating ? "on" : ""}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div></div>
@@ -1656,7 +1722,7 @@ function openDrawer(cid, roleId, tab = "screen") {
       ${(c.tags || []).length ? `<div class="sect"><h3>Tags</h3>${c.tags.map((t) => `<span class="ctag">${esc(t)}</span>`).join("")}</div>` : ""}
       ${(c.skills || []).length ? `<div class="sect"><h3>Skills</h3>${c.skills.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
       ${c.note ? `<div class="sect"><h3>Why HighCall VA</h3><p style="margin:0;white-space:pre-line">${esc(c.note)}</p></div>` : ""}
-      <div class="sect"><h3>Roles</h3>${candRoles(c).length ? `<div class="stack" style="gap:6px">${candRoles(c).map((r) => `<div class="row"><span style="flex:1">${esc(roleTitle(r))}</span><span class="badge">${esc(pipeFor(c.id, r)?.stage || "Applied")}</span></div>`).join("")}</div>` : `<p class="muted" style="margin:0">Talent pool only</p>`}
+      <div class="sect"><h3>Roles</h3>${candRoles(c).length ? `<div class="stack" style="gap:6px">${candRoles(c).map((r) => `<div class="row"><span style="flex:1">${esc(roleTitle(r))}</span><span class="badge">${esc(stageShort(pipeFor(c.id, r)?.stage))}</span></div>`).join("")}</div>` : `<p class="muted" style="margin:0">Talent pool only</p>`}
         ${S.isRecruiter ? `<div class="row" style="margin-top:12px"><select class="in" id="cpy" data-nodirty style="flex:1;width:auto">${S.roles.filter((r) => r.status !== "archived" && !candRoles(c).includes(r.id)).map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("") || `<option value="">No other roles</option>`}</select><button class="btn sm" id="cpybtn">Copy to role</button></div>` : ""}</div>
       ${S.isRecruiter ? dcSection(c) : ""}
       ${S.isRecruiter ? `<div class="sect"><button class="btn danger sm" id="del">${ICON.trash}Delete candidate</button></div>` : ""}
@@ -1879,7 +1945,7 @@ function openTemplateEditor(t) {
   const m = openLayer(`<form class="modal" novalidate>
     <div class="dhead"><h2>${t ? "Edit template" : "New template"}</h2><button type="button" class="btn ghost x" data-close aria-label="Close">${ICON.x}</button></div>
     <div class="grid2"><label class="f">Template name<input class="in" name="name" maxlength="120" value="${esc(t?.name || "")}" placeholder="Interview invitation"></label>
-      <label class="f">Suggest when moved to<select class="in" name="purpose">${TEMPLATE_PURPOSES.map((p) => `<option value="${p}" ${(t?.purpose || "Other") === p ? "selected" : ""}>${p === "Other" ? "Any stage (not suggested)" : p === "Outreach" ? "Outreach (bulk emails)" : p}</option>`).join("")}</select></label></div>
+      <label class="f">Suggest when moved to<select class="in" name="purpose">${TEMPLATE_PURPOSES.map((p) => `<option value="${p}" ${(t?.purpose || "Other") === p ? "selected" : ""}>${p === "Other" ? "Any stage (not suggested)" : p === "Outreach" ? "Outreach (bulk emails)" : p === "Applied" ? "Applied (sent automatically when someone applies)" : p}</option>`).join("")}</select></label></div>
     <label class="f">Subject<input class="in" name="subject" maxlength="200" value="${esc(t?.subject || "")}" placeholder="Interview invitation: {{role}} at HighCall VA"></label>
     <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;color:var(--ink)">Message
       <div class="row" style="gap:6px">${PLACEHOLDERS.map(([k, l]) => `<button type="button" class="chip" data-ph="${k}" title="${l}" style="cursor:pointer">${k}</button>`).join("")}</div>

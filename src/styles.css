@@ -575,3 +575,4 @@ body.site-careers{font-family:"Figtree",Inter,"Segoe UI",Arial,sans-serif}
 .tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:4px}
 .taginput{border:1px dashed #C3D1CD;border-radius:999px;padding:3px 10px;font-size:12.5px;min-width:150px;background:var(--surface);color:var(--ink)}
 .taginput:focus{outline:2px solid #8DB82C;outline-offset:0;border-style:solid}
+.wbar:empty{display:none}

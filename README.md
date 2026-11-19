@@ -44,7 +44,7 @@ Run it the same way you ran the first one:
 2. Copy the file into the DeviceCare repo's `supabase/migrations/` folder and commit it.
 3. Before your next `supabase db push` from DeviceCare, mark both ATS files as applied:
    ```powershell
-   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200
+   npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200 20261120000100 20261120000200
    ```
 
 **Then the offers and outcomes update:** run `for-devicecare-repo/supabase/migrations/20261112140000_ats_outcomes.sql` the same way. It adds:
@@ -56,7 +56,7 @@ Run it the same way you ran the first one:
 
 When you repair the migration history later, include all four versions:
 ```powershell
-npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200
+npx supabase migration repair --status applied 20261112120000 20261112130000 20261112140000 20261112150000 20261112160000 20261113000100 20261119000100 20261119000200 20261120000100 20261120000200
 ```
 
 Stage history starts from the moment this runs. Anything already in a pipeline is back-filled with the best available dates.
