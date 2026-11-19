@@ -952,7 +952,7 @@ function viewRole(v, id) {
   if (!role) { v.innerHTML = `<div class="panel empty"><h3>This role isn’t available</h3><p>It may have been deleted.</p><a class="btn" href="#roles">Go to roles</a></div>`; delete v.dataset.v; return; }
   if (v.dataset.v !== "role-" + id) {
     v.dataset.v = "role-" + id;
-    v.innerHTML = `<div id="rhead"></div><div class="pipeline" id="pstrip"></div>
+    v.innerHTML = `<div id="rhead"></div><div class="pstrip" id="pstrip"></div>
       <div class="search"><input class="in" id="rq" type="search" placeholder="Search this role’s candidates" value="${esc(S.ui.roleQ)}" aria-label="Search candidates in this role"></div>
       <div id="rqerr"></div><div class="panel table-wrap" id="rlist" style="margin-top:14px"></div><div id="rbulk"></div>`;
     $("#rq", v).oninput = (e) => { S.ui.roleQ = e.target.value; drawRoleList(v, id); };
@@ -979,7 +979,18 @@ function viewRole(v, id) {
   }
   const counts = Object.fromEntries(STAGES.map((s) => [s, 0])); es.forEach((e) => (counts[e.stage] = (counts[e.stage] || 0) + 1));
   const stripStages = STAGES.flatMap((s) => (s === "Applied" ? ["Applied", ...LEGACY_STAGES.filter((x) => counts[x])] : [s]));
-  $("#pstrip", v).innerHTML = [["all", "All", es.length], ...stripStages.map((s) => [s, stageShort(s), counts[s] || 0])].map(([k, l, n]) => `<button data-st="${k}" class="${S.ui.stage === k ? "on" : ""}"><div class="k">${l}</div><div class="v">${n}</div></button>`).join("");
+  // Stages grouped the way hiring flows, so the strip fits the screen without sideways scrolling.
+  const groups = [
+    ["Pipeline", [["all", "All", es.length], ["Sourced", "Sourced"], ["Applied", "Applied"]]],
+    ["Shortlisted", [["Shortlisted: Healthcare", "Healthcare background"], ["Shortlisted: Med VA", "Med VA experience"], ...(counts.Shortlisted ? [["Shortlisted", "Pick a category", null, "warn"]] : [])]],
+    ["Interviews", [["Initial Interview", "Initial"], ["HR Interview", "HR"]]],
+    ["Post HR interview", [["Post HR: Moderate", "Moderate"], ["Post HR: Very High", "Very high"]]],
+    ["Outcome", [["Offered", "Offered"], ["Hired", "Hired"], ["Rejected", "Rejected"], ["Withdrawn", "Withdrawn"]]],
+  ];
+  $("#pstrip", v).innerHTML = groups.map(([g, items]) => `<div class="pgroup"><div class="pglabel">${g}</div><div class="pgitems">${items.map(([k, l, n, tone]) => {
+    const c = n ?? (counts[k] || 0);
+    return `<button data-st="${esc(k)}" class="pchip ${S.ui.stage === k ? "on" : ""} ${tone || ""} ${c ? "" : "zero"}" title="${esc(STAGE_LABEL[k] || l)}"><span class="pl">${l}</span><span class="pn">${c}</span></button>`;
+  }).join("")}</div></div>`).join("");
   $$("#pstrip button", v).forEach((b) => (b.onclick = () => { S.ui.stage = b.dataset.st; viewRole(v, id); }));
   drawRoleList(v, id);
 }

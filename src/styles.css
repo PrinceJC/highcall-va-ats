@@ -576,3 +576,19 @@ body.site-careers{font-family:"Figtree",Inter,"Segoe UI",Arial,sans-serif}
 .taginput{border:1px dashed #C3D1CD;border-radius:999px;padding:3px 10px;font-size:12.5px;min-width:150px;background:var(--surface);color:var(--ink)}
 .taginput:focus{outline:2px solid #8DB82C;outline-offset:0;border-style:solid}
 .wbar:empty{display:none}
+
+/* role pipeline: grouped stage strip (fits the screen, no sideways scrolling) */
+.pstrip{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:22px}
+.pgroup{flex:1 1 auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:10px 12px 12px}
+.pglabel{font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:0 2px 8px}
+.pgitems{display:flex;gap:6px}
+.pchip{flex:1 1 0;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);cursor:pointer;font:inherit;text-align:left;white-space:nowrap;transition:background .12s,border-color .12s}
+.pchip .pl{font-size:13px;font-weight:600;color:var(--ink)}
+.pchip .pn{font-size:15px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;min-width:18px;text-align:right}
+.pchip.zero .pl,.pchip.zero .pn{color:var(--muted);font-weight:500}
+.pchip:hover{border-color:#C9DD9A;background:#FAFDF3}
+.pchip.on{background:#EDF6D6;border-color:#A5D334;box-shadow:inset 0 -3px 0 #A5D334}
+.pchip.on .pl,.pchip.on .pn{color:#013D35}
+.pchip.warn{border-color:#F2C46B;background:#FFF8E8}
+.pchip.warn .pl,.pchip.warn .pn{color:#8A5A00}
+@media (max-width:700px){.pgroup{flex:1 1 100%}.pgitems{flex-wrap:wrap}.pchip{flex:1 1 calc(50% - 6px)}}
