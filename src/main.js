@@ -10,20 +10,18 @@ import { searchList } from "./search.js";
 
 const ROLE_LABEL = { admin: "Admin", recruiter: "Recruiter", hr_manager: "HR Manager", member: "Member" };
 // Hiring stages. Sourced and Applied are where candidates start; Withdrawn = the candidate declined or pulled out.
-const STAGES = ["Sourced", "Applied", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Offered", "Hired", "Rejected", "Withdrawn"];
+const STAGES = ["Sourced", "Applied", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Client Interview: Scheduled", "Client Interview: Passed", "Client Interview: Failed", "Offered", "Hired", "Rejected", "Withdrawn"];
 // Plain "Shortlisted" comes from before the shortlist categories existed; recruiters pick a category for it.
 const LEGACY_STAGES = ["Shortlisted"];
 const STAGE_LABEL = {
   Shortlisted: "Shortlisted (choose a category)",
-  Applied: "Applied (email, sent automatically for careers page applications)",
   "Shortlisted: Healthcare": "Shortlisted: No Med VA experience - With Healthcare Background",
   "Shortlisted: Med VA": "Shortlisted: With Med VA experience - Not from Healthcare Background",
-  "Initial Interview": "Initial Interview (email)", "HR Interview": "HR Interview (email)",
   "Post HR: Moderate": "Post HR Interview: Moderate matching probability",
   "Post HR: Very High": "Post HR Interview: Very high matching probability",
-  Offered: "Offered (email)", Hired: "Hired (email)", Rejected: "Rejected: our decision (email)", Withdrawn: "Withdrawn: candidate declined or pulled out",
+  Rejected: "Rejected: our decision", Withdrawn: "Withdrawn: candidate declined or pulled out",
 };
-const STAGE_SHORT = { Shortlisted: "Shortlisted (pick category)", "Shortlisted: Healthcare": "Shortlisted · Healthcare background", "Shortlisted: Med VA": "Shortlisted · Med VA experience", "Post HR: Moderate": "Post HR · Moderate", "Post HR: Very High": "Post HR · Very high" };
+const STAGE_SHORT = { Shortlisted: "Shortlisted (pick category)", "Shortlisted: Healthcare": "Shortlisted · Healthcare background", "Shortlisted: Med VA": "Shortlisted · Med VA experience", "Post HR: Moderate": "Post HR · Moderate", "Post HR: Very High": "Post HR · Very high", "Client Interview: Scheduled": "Client · Scheduled", "Client Interview: Passed": "Client · Passed", "Client Interview: Failed": "Client · Failed" };
 const stageShort = (st) => STAGE_SHORT[st] || st || "Applied";
 const CLOSED = ["Hired", "Rejected", "Withdrawn"];
 const APP_NAME = "HighCall Careers"; // product name in the sidebar, like "DeviceCare"
@@ -639,7 +637,7 @@ function statCard(label, value, cap, icon, tone = "", goTo = "") {
 function drawDash(box, d) {
   const per = periodLabel(d.period), n = (k) => Number(d[k] || 0);
   const f = d.funnel || {}, entered = n("entered");
-  const funnel = [["Entered pipeline", entered], ["Shortlisted", +f.Shortlisted || 0], ["Initial interview", +f["Initial Interview"] || 0], ["HR interview", +f["HR Interview"] || 0], ["Post HR interview", +f["Post HR Interview"] || 0], ["Offered", +f.Offered || 0], ["Hired", n("hired")]];
+  const funnel = [["Entered pipeline", entered], ["Shortlisted", +f.Shortlisted || 0], ["Initial interview", +f["Initial Interview"] || 0], ["HR interview", +f["HR Interview"] || 0], ["Post HR interview", +f["Post HR Interview"] || 0], ["Client interview", +f["Client Interview"] || 0], ["Offered", +f.Offered || 0], ["Hired", n("hired")]];
   const fmax = Math.max(1, ...funnel.map((x) => x[1]));
   const trend = d.trend || [], tmax = Math.max(1, ...trend.map((t) => Math.max(t.applied, t.hired)));
   const mon = (ym) => new Date(ym + "-01T00:00:00").toLocaleDateString("en-US", { month: "short" });
@@ -654,6 +652,8 @@ function drawDash(box, d) {
     ["Failed initial interview", +o.failed_initial_interview || 0, "Rejected from Initial Interview"],
     ["Failed HR interview", +o.failed_hr_interview || 0, "Rejected from HR Interview"],
     ["Rejected after HR interview", +o.rejected_after_post_hr || 0, "Rejected from a Post HR Interview stage"],
+    ["Failed client interview", +o.client_failed || 0, "Moved to Client Interview: Failed"],
+    ["Rejected after client interview", +o.rejected_after_client || 0, "Rejected from a Client Interview stage"],
     ["Rejected after offer", +o.rejected_after_offer || 0, "Offer withdrawn by HighCall VA"],
     ["Withdrew before offer", +o.withdrew_before_offer || 0, "Candidate pulled out before an offer"],
     ["Declined offer", +o.offer_declined || 0, "Candidate turned down the offer"],
@@ -766,12 +766,12 @@ function mailPanel(d) {
 
 
 /* ---------- interviews (HR managers, recruiters, admins) ---------- */
-const INTERVIEW_TABS = [["Initial Interview", "Initial interview"], ["HR Interview", "HR interview"], ["posthr", "Post HR interview"], ["Offered", "Offered"], ["active", "All in progress"], ["Withdrawn", "Withdrawn"]];
-const ivMatch = (tab, st) => tab === "active" || (tab === "posthr" ? st === "Post HR: Moderate" || st === "Post HR: Very High" : st === tab);
+const INTERVIEW_TABS = [["Initial Interview", "Initial interview"], ["HR Interview", "HR interview"], ["posthr", "Post HR interview"], ["client", "Client interview"], ["Offered", "Offered"], ["active", "All in progress"], ["Withdrawn", "Withdrawn"]];
+const ivMatch = (tab, st) => tab === "active" || (tab === "posthr" ? st === "Post HR: Moderate" || st === "Post HR: Very High" : tab === "client" ? String(st).startsWith("Client Interview:") : st === tab);
 function viewInterviews(v) {
   if (!S.ui.ivTab) S.ui.ivTab = S.isHR ? "HR Interview" : "Initial Interview";
   const open = new Set(S.roles.filter((r) => r.status === "public" || r.status === "internal").map((r) => r.id));
-  const inProgress = (p) => p.role_id && open.has(p.role_id) && candById(p.candidate_id) && ["Shortlisted", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Offered"].includes(p.stage);
+  const inProgress = (p) => p.role_id && open.has(p.role_id) && candById(p.candidate_id) && ["Shortlisted", "Shortlisted: Healthcare", "Shortlisted: Med VA", "Initial Interview", "HR Interview", "Post HR: Moderate", "Post HR: Very High", "Client Interview: Scheduled", "Client Interview: Passed", "Client Interview: Failed", "Offered"].includes(p.stage);
   const all = S.pipes.filter(inProgress);
   // Withdrawn: everyone who pulled out, across all roles (open or closed). No email is needed.
   const withdrawn = S.pipes.filter((p) => p.role_id && p.stage === "Withdrawn" && candById(p.candidate_id) && roleById(p.role_id))
@@ -985,6 +985,7 @@ function viewRole(v, id) {
     ["Shortlisted", [["Shortlisted: Healthcare", "Healthcare background"], ["Shortlisted: Med VA", "Med VA experience"], ...(counts.Shortlisted ? [["Shortlisted", "Pick a category", null, "warn"]] : [])]],
     ["Interviews", [["Initial Interview", "Initial"], ["HR Interview", "HR"]]],
     ["Post HR interview", [["Post HR: Moderate", "Moderate"], ["Post HR: Very High", "Very high"]]],
+    ["Client interview", [["Client Interview: Scheduled", "Scheduled"], ["Client Interview: Passed", "Passed"], ["Client Interview: Failed", "Failed"]]],
     ["Outcome", [["Offered", "Offered"], ["Hired", "Hired"], ["Rejected", "Rejected"], ["Withdrawn", "Withdrawn"]]],
   ];
   $("#pstrip", v).innerHTML = groups.map(([g, items]) => `<div class="pgroup"><div class="pglabel">${g}</div><div class="pgitems">${items.map(([k, l, n, tone]) => {
