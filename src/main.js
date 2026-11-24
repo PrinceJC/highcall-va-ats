@@ -114,6 +114,7 @@ async function setSession(session) {
   S.isRecruiter = S.isAdmin || S.staff?.role === "recruiter";
   S.isHR = S.staff?.role === "hr_manager";
   S.isReviewer = S.isRecruiter || S.isHR; // can open candidates, interview, take notes
+  S.canRoles = S.isRecruiter || S.isHR;   // can create, edit and publish roles
   S.isMember = !!S.staff;
 }
 async function loadAll() {
@@ -853,7 +854,7 @@ function viewRoles(v) {
   const groups = { active: S.roles.filter((r) => r.status === "public" || r.status === "internal"), draft: S.roles.filter((r) => r.status === "draft"), archived: S.roles.filter((r) => r.status === "archived") };
   const list = groups[tab];
   v.innerHTML = `
-  ${pageHead("Your open positions", "Roles", "Publish roles publicly on the careers page or internally for the team.", (S.isRecruiter ? `<button class="btn primary" id="newrole">${ICON.plus}New role</button>` : ""))}
+  ${pageHead("Your open positions", "Roles", "Publish roles publicly on the careers page or internally for the team.", (S.canRoles ? `<button class="btn primary" id="newrole">${ICON.plus}New role</button>` : ""))}
   <div class="tabs">${[["active", "Open"], ["draft", "Drafts"], ["archived", "Archived"]].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}<span class="n">${groups[k].length}</span></button>`).join("")}</div>
   ${list.length ? `<div class="panel list">${list.map((r) => {
     const es = roleEntries(r.id), active = es.filter((e) => !CLOSED.includes(e.stage)).length, fresh = es.filter((e) => e.stage === "Applied").length;
@@ -895,7 +896,7 @@ function openRoleEditor(role) {
     <div class="sect"><h3>Visibility</h3>
       <select class="in" name="status">${[["draft", "Draft: only recruiters can see it"], ["public", "Public: listed on the careers page"], ["internal", "Internal: only signed-in HighCall VA team members"], ["archived", "Archived: closed and hidden"]].map(([k, l]) => `<option value="${k}" ${r.status === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="qerr hidden" id="ferr"></div>
-    <div class="row mfoot" style="justify-content:flex-end">${role ? `<button type="button" class="btn danger" id="delrole" style="margin-right:auto">Delete role</button>` : ""}<button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">${role ? "Save role" : "Create role"}</button></div>
+    <div class="row mfoot" style="justify-content:flex-end">${role && S.isRecruiter ? `<button type="button" class="btn danger" id="delrole" style="margin-right:auto">Delete role</button>` : ""}<button type="button" class="btn" data-close>Cancel</button><button class="btn primary" type="submit">${role ? "Save role" : "Create role"}</button></div>
   </form>`);
   const drawQs = () => {
     $("#qlist", m).innerHTML = qs.length ? qs.map((x, i) => `<div class="qi"><input class="in" data-qi="${i}" value="${esc(x.text)}"><button type="button" class="btn ghost sm" data-qdel="${i}" aria-label="Remove question">${ICON.x}</button></div>`).join("") : `<div class="muted small">No questions yet.</div>`;
@@ -964,15 +965,17 @@ function viewRole(v, id) {
       <div class="row" style="gap:14px"><h1>${esc(role.title)}</h1><span class="badge ${role.status}"><span class="dot"></span>${STATUS_LABEL[role.status]}</span></div>
       <div class="sub">${[role.employment_type, role.location, role.schedule].filter(Boolean).map(esc).join(", ")}</div></div>
     <div class="actions">
-      ${S.isRecruiter ? `<select class="in" id="vis" style="width:auto;padding:11px 12px" aria-label="Visibility">${[["draft", "Draft"], ["public", "Published publicly"], ["internal", "Published internally"], ["archived", "Archived"]].map(([k, l]) => `<option value="${k}" ${role.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
-      <button class="btn" id="edit">Edit role</button>
-      <button class="btn" id="addcand">${ICON.plus}Add candidate</button>
+      ${S.canRoles ? `<select class="in" id="vis" style="width:auto;padding:11px 12px" aria-label="Visibility">${[["draft", "Draft"], ["public", "Published publicly"], ["internal", "Published internally"], ["archived", "Archived"]].map(([k, l]) => `<option value="${k}" ${role.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="btn" id="edit">Edit role</button>` : ""}
+      ${S.isRecruiter ? `<button class="btn" id="addcand">${ICON.plus}Add candidate</button>
       <button class="btn" id="bulkcand">${ICON.inbox}Bulk upload CVs</button>
       <button class="btn primary" id="frompool">Copy from talent pool</button>` : ""}
     </div></div>`;
-  if (S.isRecruiter) {
+  if (S.canRoles) {
   $("#vis", v).onchange = (e) => setRoleStatus(role, e.target.value);
   $("#edit", v).onclick = () => openRoleEditor(role);
+  }
+  if (S.isRecruiter) {
   $("#addcand", v).onclick = () => openAddCand(role.id);
   $("#bulkcand", v).onclick = () => openBulkUpload(role.id);
   $("#frompool", v).onclick = () => { S.ui.targetRole = role.id; go("pool"); };
@@ -1696,7 +1699,7 @@ function openDrawer(cid, roleId, tab = "screen") {
     <div class="tabs" style="margin-bottom:0">${[["screen", "Screening"], ["notes", `Notes${S.notes.filter((x) => x.candidate_id === cid).length ? ` (${S.notes.filter((x) => x.candidate_id === cid).length})` : ""}`], ["profile", "Profile"], ["cv", "CV"], ["mail", `Emails${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length ? ` (${S.emails.filter((x) => x.candidate_id === cid && x.status !== "manual").length})` : ""}`]].map(([k, l]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div id="tscreen" class="${tab === "screen" ? "" : "hidden"}">
       <div class="sect"><h3>Screening questions</h3><div class="stack" id="qs"></div>
-        ${S.isRecruiter ? `<div class="row" style="margin-top:10px"><input class="in" id="newq" placeholder="Add a question to ${roleId ? "this role" : "talent pool screening"}" style="flex:1"><button class="btn sm" id="addq" type="button">${ICON.plus}Add</button></div>` : ""}</div>
+        ${S.isRecruiter || (S.isHR && roleId) ? `<div class="row" style="margin-top:10px"><input class="in" id="newq" placeholder="Add a question to ${roleId ? "this role" : "talent pool screening"}" style="flex:1"><button class="btn sm" id="addq" type="button">${ICON.plus}Add</button></div>` : ""}</div>
       <div class="sect"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Device and connectivity</h3><span id="ready"></span></div>
         <div class="grid3">
           <label class="f">Main device<select class="in" data-d="type">${["", "Laptop", "Desktop", "Other"].map((o) => `<option value="${o}" ${dev.type === o ? "selected" : ""}>${o || "Choose"}</option>`).join("")}</select></label>
@@ -1805,7 +1808,7 @@ function openDrawer(cid, roleId, tab = "screen") {
   const oc = $("#opencv", d); if (oc) oc.onclick = () => openCv(c);
   const answers = { ...(p.answers || {}) };
   const drawQ = () => {
-    $("#qs", d).innerHTML = qs.length ? qs.map((x) => `<div class="q"><div class="qt"><span>${esc(x.text)}</span>${S.isRecruiter ? `<button type="button" class="btn ghost sm" data-qdel="${esc(x.id)}" aria-label="Remove question">${ICON.x}</button>` : ""}</div><textarea class="in" data-a="${esc(x.id)}" style="min-height:64px" placeholder="Candidate’s answer">${esc(answers[x.id])}</textarea></div>`).join("") : `<p class="muted" style="margin:0">No questions yet. Add one below.</p>`;
+    $("#qs", d).innerHTML = qs.length ? qs.map((x) => `<div class="q"><div class="qt"><span>${esc(x.text)}</span>${S.isRecruiter || (S.isHR && roleId) ? `<button type="button" class="btn ghost sm" data-qdel="${esc(x.id)}" aria-label="Remove question">${ICON.x}</button>` : ""}</div><textarea class="in" data-a="${esc(x.id)}" style="min-height:64px" placeholder="Candidate’s answer">${esc(answers[x.id])}</textarea></div>`).join("") : `<p class="muted" style="margin:0">No questions yet. Add one below.</p>`;
     $$("[data-a]", d).forEach((t) => (t.oninput = () => { answers[t.dataset.a] = t.value; }));
     $$("[data-qdel]", d).forEach((b) => (b.onclick = async () => { qs = qs.filter((x) => x.id !== b.dataset.qdel); drawQ(); try { await saveQuestions(roleId, qs); } catch (e) { writeErr(e); } }));
   };
@@ -1889,7 +1892,7 @@ function viewSettings(v) {
         <div class="grid3"><label class="f">Email<input class="in" name="email" type="email" required></label><label class="f">Name<input class="in" name="name"></label>
         <label class="f">Access<select class="in" name="role"><option value="recruiter">Recruiter</option><option value="hr_manager">HR Manager</option><option value="member">Member</option><option value="admin">Admin</option></select></label></div>
         <div class="row"><button class="btn primary" id="addstaffbtn">${ICON.plus}Add to team</button><span class="muted small">New people get an email with a link to set their password. Existing HCVA logins (like DeviceCare users) get access right away.</span></div></form>
-        <p class="muted small" style="margin:14px 0 0"><b>Admins</b> manage everything, including the team. <b>Recruiters</b> manage roles, the talent pool, screening and emails. <b>HR Managers</b> run interviews: they see role pipelines and the Interviews page, move candidates through stages, rate them, take interview notes and email them. <b>Members</b> see internal roles on the careers page and can apply.</p>` : `<p class="muted small" style="margin:12px 0 0">Ask an admin to add or change team members.</p>`}
+        <p class="muted small" style="margin:14px 0 0"><b>Admins</b> manage everything, including the team. <b>Recruiters</b> manage roles, the talent pool, screening and emails. <b>HR Managers</b> create, edit and publish roles and run interviews: they see role pipelines and the Interviews page, move candidates through stages, rate them, take interview notes and email them. <b>Members</b> see internal roles on the careers page and can apply.</p>` : `<p class="muted small" style="margin:12px 0 0">Ask an admin to add or change team members.</p>`}
     </div>
   </div>`;
   const draw = () => {
